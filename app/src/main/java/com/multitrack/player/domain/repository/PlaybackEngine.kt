@@ -1,0 +1,41 @@
+package com.multitrack.player.domain.repository
+
+import com.multitrack.player.domain.model.PlaybackSession
+import com.multitrack.player.domain.model.PlaybackState
+import kotlinx.coroutines.flow.StateFlow
+
+/**
+ * Pure abstraction over the audio engine. The ViewModel talks to this only;
+ * it has zero knowledge of AudioTrack, MediaCodec, ExoPlayer, etc.
+ *
+ * Threading contract: every method may be called from the main thread; the
+ * implementation is responsible for moving work to its own threads.
+ */
+interface PlaybackEngine {
+
+    val state: StateFlow<PlaybackState>
+
+    /** Loads all tracks of [session] and pre-decodes them into PCM. */
+    fun prepare(session: PlaybackSession)
+
+    /** Starts (or resumes) playback from the current position. */
+    fun play()
+
+    /** Pauses playback, keeping position. */
+    fun pause()
+
+    /** Stops playback and resets position to 0. */
+    fun stop()
+
+    /** Resets position to 0 without changing the playing/paused flag. */
+    fun seekToStart()
+
+    /** Enables/disables looping the whole mix. */
+    fun setLoop(enabled: Boolean)
+
+    /** Changes the playback speed (BPM). Clamped to engine limits. */
+    fun setBpm(bpm: Int)
+
+    /** Releases every native resource. Idempotent. */
+    fun release()
+}
