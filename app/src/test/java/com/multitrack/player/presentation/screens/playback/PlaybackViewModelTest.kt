@@ -95,6 +95,26 @@ class PlaybackViewModelTest {
     }
 
     @Test
+    fun `volume and solo actions target one track`() {
+        val track = com.multitrack.player.domain.model.AudioTrack(
+            id = "track-1",
+            name = "Drums.wav",
+            uri = "content://track-1",
+            durationMs = 1_000L,
+            format = com.multitrack.player.domain.model.AudioFormat.WAV
+        )
+        state.value = state.value.copy(tracks = listOf(track))
+
+        viewModel().apply {
+            onTrackVolumeChanged(track.id, 0.4f)
+            onToggleTrackSolo(track.id)
+        }
+
+        verify { control.setTrackVolume(track.id, 0.4f) }
+        verify { control.setTrackSolo(track.id, true) }
+    }
+
+    @Test
     fun `bpm plus and minus delegate to control with current value`() {
         state.value = state.value.copy(currentBpm = 120)
         val vm = viewModel()

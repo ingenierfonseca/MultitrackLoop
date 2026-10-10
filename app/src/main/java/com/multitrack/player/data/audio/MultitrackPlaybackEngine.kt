@@ -77,24 +77,29 @@ class MultitrackPlaybackEngine(
                 mixer.configure(sources, session.initialBpm)
                 mixer.setLoop(session.isLoopEnabled)
                 mixer.setMetronomeEnabled(session.isMetronomeEnabled)
-                session.tracks.forEachIndexed { index, track ->
-                    if (track.id in session.mutedTrackIds) mixer.setGain(index, 0f)
-                }
+                val trackIds = session.tracks.map { it.id }.toSet()
                 preparedTracks = session.tracks
                 resume = false
-                _state.value = _state.value.copy(
-                    tracks = session.tracks,
-                    currentBpm = session.initialBpm,
-                    durationMs = durationMs,
-                    positionMs = 0L,
-                    isPlaying = false,
-                    isPaused = false,
-                    isLoopEnabled = session.isLoopEnabled,
-                    isMetronomeEnabled = session.isMetronomeEnabled,
-                    isLoading = false,
-                    mutedTrackIds = session.mutedTrackIds.intersect(session.tracks.map { it.id }.toSet()),
-                    error = null
-                )
+                _state.update { state ->
+                    state.copy(
+                        tracks = session.tracks,
+                        currentBpm = session.initialBpm,
+                        durationMs = durationMs,
+                        positionMs = 0L,
+                        isPlaying = false,
+                        isPaused = false,
+                        isLoopEnabled = session.isLoopEnabled,
+                        isMetronomeEnabled = session.isMetronomeEnabled,
+                        isLoading = false,
+                        mutedTrackIds = session.mutedTrackIds.intersect(trackIds),
+                        soloTrackIds = session.soloTrackIds.intersect(trackIds),
+                        trackVolumes = session.trackVolumes
+                            .filterKeys { it in trackIds }
+                            .mapValues { (_, volume) -> volume.coerceIn(0f, 1f) },
+                        error = null
+                    )
+                }
+                applyTrackGains(_state.value)
             } catch (t: Throwable) {
                 _state.value = _state.value.copy(
                     isLoading = false,
@@ -140,9 +145,7 @@ class MultitrackPlaybackEngine(
     }
 
     override fun setTrackMuted(trackId: String, muted: Boolean) {
-        val trackIndex = preparedTracks.indexOfFirst { it.id == trackId }
-        if (trackIndex < 0) return
-        mixer.setGain(trackIndex, if (muted) 0f else 1f)
+        if (preparedTracks.none { it.id == trackId }) return
         _state.update { state ->
             state.copy(
                 mutedTrackIds = if (muted) {
@@ -152,11 +155,30 @@ class MultitrackPlaybackEngine(
                 }
             )
         }
+        applyTrackGains(_state.value)
     }
 
     override fun setMetronomeEnabled(enabled: Boolean) {
         mixer.setMetronomeEnabled(enabled)
         _state.update { it.copy(isMetronomeEnabled = enabled) }
+    }
+
+    override fun setTrackVolume(trackId: String, volume: Float) {
+        if (preparedTracks.none { it.id == trackId }) return
+        _state.update { state ->
+            state.copy(trackVolumes = state.trackVolumes + (trackId to volume.coerceIn(0f, 1f)))
+        }
+        applyTrackGains(_state.value)
+    }
+
+    override fun setTrackSolo(trackId: String, solo: Boolean) {
+        if (preparedTracks.none { it.id == trackId }) return
+        _state.update { state ->
+            state.copy(
+                soloTrackIds = if (solo) state.soloTrackIds + trackId else state.soloTrackIds - trackId
+            )
+        }
+        applyTrackGains(_state.value)
     }
 
     override fun setBpm(bpm: Int) {
@@ -172,6 +194,16 @@ class MultitrackPlaybackEngine(
 
     private fun onEngineError(error: AudioError) {
         _state.value = _state.value.copy(isPlaying = false, isPaused = false, error = error)
+    }
+
+    private fun applyTrackGains(state: PlaybackState) {
+        val hasSoloTracks = state.soloTrackIds.isNotEmpty()
+        preparedTracks.forEachIndexed { index, track ->
+            val isExcludedBySolo = hasSoloTracks && track.id !in state.soloTrackIds
+            val isMuted = track.id in state.mutedTrackIds || isExcludedBySolo
+            val gain = if (isMuted) 0f else state.trackVolumes[track.id] ?: 1f
+            mixer.setGain(index, gain)
+        }
     }
 
     // ---------- helpers ----------

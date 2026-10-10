@@ -31,7 +31,9 @@ class PlaybackProjectJsonCodecTest {
             bpm = 124,
             isLoopEnabled = false,
             isMetronomeEnabled = true,
-            mutedTrackIds = setOf("track-2")
+            mutedTrackIds = setOf("track-2"),
+            soloTrackIds = setOf("track-1"),
+            trackVolumes = mapOf("track-1" to 0.65f, "track-2" to 0.3f)
         )
 
         assertEquals(project, PlaybackProjectJsonCodec.decode(PlaybackProjectJsonCodec.encode(project)))

@@ -28,7 +28,9 @@ data class SerializableSession(
     val bpm: Int,
     val isLoopEnabled: Boolean = true,
     val isMetronomeEnabled: Boolean = false,
-    val mutedTrackIds: List<String> = emptyList()
+    val mutedTrackIds: List<String> = emptyList(),
+    val soloTrackIds: List<String> = emptyList(),
+    val trackVolumes: Map<String, Float> = emptyMap()
 )
 
 fun PlaybackSession.toSerializable(): SerializableSession =
@@ -39,7 +41,9 @@ fun PlaybackSession.toSerializable(): SerializableSession =
         bpm = initialBpm,
         isLoopEnabled = isLoopEnabled,
         isMetronomeEnabled = isMetronomeEnabled,
-        mutedTrackIds = mutedTrackIds.toList()
+        mutedTrackIds = mutedTrackIds.toList(),
+        soloTrackIds = soloTrackIds.toList(),
+        trackVolumes = trackVolumes
     )
 
 fun SerializableSession.toDomain(): PlaybackSession =
@@ -56,7 +60,9 @@ fun SerializableSession.toDomain(): PlaybackSession =
         initialBpm = bpm,
         isLoopEnabled = isLoopEnabled,
         isMetronomeEnabled = isMetronomeEnabled,
-        mutedTrackIds = mutedTrackIds.toSet()
+        mutedTrackIds = mutedTrackIds.toSet(),
+        soloTrackIds = soloTrackIds.toSet(),
+        trackVolumes = trackVolumes
     )
 
 object SessionCodec {

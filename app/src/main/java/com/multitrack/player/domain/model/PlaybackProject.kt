@@ -6,5 +6,7 @@ data class PlaybackProject(
     val bpm: Int,
     val isLoopEnabled: Boolean,
     val isMetronomeEnabled: Boolean = false,
-    val mutedTrackIds: Set<String> = emptySet()
+    val mutedTrackIds: Set<String> = emptySet(),
+    val soloTrackIds: Set<String> = emptySet(),
+    val trackVolumes: Map<String, Float> = emptyMap()
 )

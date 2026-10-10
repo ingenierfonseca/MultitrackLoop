@@ -39,6 +39,12 @@ interface PlaybackEngine {
     /** Enables or disables the metronome click on the left output channel. */
     fun setMetronomeEnabled(enabled: Boolean)
 
+    /** Sets one source's linear gain in the range 0..1. */
+    fun setTrackVolume(trackId: String, volume: Float)
+
+    /** Adds/removes one track from the solo set. */
+    fun setTrackSolo(trackId: String, solo: Boolean)
+
     /** Changes the playback speed (BPM). Clamped to engine limits. */
     fun setBpm(bpm: Int)
 

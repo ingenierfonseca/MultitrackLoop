@@ -66,6 +66,18 @@ class PlaybackControlUseCaseTest {
     }
 
     @Test
+    fun `track volume forwards to engine`() {
+        useCase.setTrackVolume("track-1", 0.6f)
+        verify { engine.setTrackVolume("track-1", 0.6f) }
+    }
+
+    @Test
+    fun `track solo forwards to engine`() {
+        useCase.setTrackSolo("track-1", true)
+        verify { engine.setTrackSolo("track-1", true) }
+    }
+
+    @Test
     fun `play pause stop forward to engine`() {
         useCase.play()
         useCase.pause()

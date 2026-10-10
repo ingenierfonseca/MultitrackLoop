@@ -62,7 +62,9 @@ class PlaybackViewModel @Inject constructor(
                         initialBpm = current.currentBpm,
                         isLoopEnabled = current.isLoopEnabled,
                         isMetronomeEnabled = current.isMetronomeEnabled,
-                        mutedTrackIds = current.mutedTrackIds
+                        mutedTrackIds = current.mutedTrackIds,
+                        soloTrackIds = current.soloTrackIds,
+                        trackVolumes = current.trackVolumes
                     )
                 )
                 awaitEnginePreparation()
@@ -108,7 +110,9 @@ class PlaybackViewModel @Inject constructor(
                         bpm = playback.currentBpm,
                         isLoopEnabled = playback.isLoopEnabled,
                         isMetronomeEnabled = playback.isMetronomeEnabled,
-                        mutedTrackIds = playback.mutedTrackIds
+                        mutedTrackIds = playback.mutedTrackIds,
+                        soloTrackIds = playback.soloTrackIds,
+                        trackVolumes = playback.trackVolumes
                     ),
                     destinationUri
                 )
@@ -148,7 +152,9 @@ class PlaybackViewModel @Inject constructor(
                             initialBpm = project.bpm,
                             isLoopEnabled = project.isLoopEnabled,
                             isMetronomeEnabled = project.isMetronomeEnabled,
-                            mutedTrackIds = project.mutedTrackIds
+                            mutedTrackIds = project.mutedTrackIds,
+                            soloTrackIds = project.soloTrackIds,
+                            trackVolumes = project.trackVolumes
                         )
                     )
                 awaitEnginePreparation()
@@ -207,6 +213,17 @@ class PlaybackViewModel @Inject constructor(
         val current = engine.state.value
         if (current.isLoading || current.tracks.none { it.id == trackId }) return
         control.setTrackMuted(trackId, trackId !in current.mutedTrackIds)
+    }
+
+    fun onTrackVolumeChanged(trackId: String, volume: Float) {
+        if (engine.state.value.isLoading) return
+        control.setTrackVolume(trackId, volume)
+    }
+
+    fun onToggleTrackSolo(trackId: String) {
+        val current = engine.state.value
+        if (current.isLoading || current.tracks.none { it.id == trackId }) return
+        control.setTrackSolo(trackId, trackId !in current.soloTrackIds)
     }
 
     fun onToggleMetronome() {

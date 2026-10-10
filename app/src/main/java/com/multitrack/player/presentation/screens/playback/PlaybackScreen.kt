@@ -25,6 +25,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.AlertDialog
@@ -45,13 +47,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTag
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.setProgress
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
@@ -309,7 +316,11 @@ private fun ReadyView(
                 tracks = state.tracks,
                 modifier = Modifier.weight(1f),
                 mutedTrackIds = state.mutedTrackIds,
-                onToggleMute = vm::onToggleTrackMute
+                soloTrackIds = state.soloTrackIds,
+                trackVolumes = state.trackVolumes,
+                onToggleMute = vm::onToggleTrackMute,
+                onToggleSolo = vm::onToggleTrackSolo,
+                onVolumeChange = vm::onTrackVolumeChanged
             )
             Column(
                 modifier = Modifier
@@ -376,7 +387,11 @@ private fun TrackList(
     tracks: List<AudioTrack>,
     modifier: Modifier = Modifier,
     mutedTrackIds: Set<String> = emptySet(),
-    onToggleMute: (String) -> Unit = {}
+    soloTrackIds: Set<String> = emptySet(),
+    trackVolumes: Map<String, Float> = emptyMap(),
+    onToggleMute: (String) -> Unit = {},
+    onToggleSolo: (String) -> Unit = {},
+    onVolumeChange: (String, Float) -> Unit = { _, _ -> }
 ) {
     LazyRow(
         modifier = modifier.fillMaxHeight(),
@@ -386,7 +401,11 @@ private fun TrackList(
             TrackRow(
                 track = track,
                 isMuted = track.id in mutedTrackIds,
-                onToggleMute = { onToggleMute(track.id) }
+                isSolo = track.id in soloTrackIds,
+                volume = trackVolumes[track.id] ?: 1f,
+                onToggleMute = { onToggleMute(track.id) },
+                onToggleSolo = { onToggleSolo(track.id) },
+                onVolumeChange = { onVolumeChange(track.id, it) }
             )
         }
     }
@@ -395,13 +414,22 @@ private fun TrackList(
 private fun TrackRow(
     track: AudioTrack,
     isMuted: Boolean,
-    onToggleMute: () -> Unit
+    isSolo: Boolean,
+    volume: Float,
+    onToggleMute: () -> Unit,
+    onToggleSolo: () -> Unit,
+    onVolumeChange: (Float) -> Unit
 ) {
     val appColors = LocalAppThemeColors.current
     val muteDescription = stringResource(
         if (isMuted) R.string.track_unmute_action else R.string.track_mute_action,
         track.name
     )
+    val soloDescription = stringResource(
+        if (isSolo) R.string.track_unsolo_action else R.string.track_solo_action,
+        track.name
+    )
+    val volumeDescription = stringResource(R.string.track_volume_action, track.name)
     Row(
         horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
@@ -418,11 +446,38 @@ private fun TrackRow(
         ) {
             Box(
                 modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
-                .background(MaterialTheme.colorScheme.primary),
-            contentAlignment = Alignment.Center
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .background(appColors.border)
+                    .pointerInput(track.id) {
+                        detectTapGestures { position ->
+                            onVolumeChange((1f - position.y / size.height).coerceIn(0f, 1f))
+                        }
+                    }
+                    .pointerInput(track.id) {
+                        detectDragGestures { change, _ ->
+                            change.consume()
+                            onVolumeChange((1f - change.position.y / size.height).coerceIn(0f, 1f))
+                        }
+                    }
+                    .semantics {
+                        testTag = "track-volume-${track.id}"
+                        contentDescription = volumeDescription
+                        progressBarRangeInfo = ProgressBarRangeInfo(volume, 0f..1f)
+                        setProgress { requestedVolume ->
+                            onVolumeChange(requestedVolume.coerceIn(0f, 1f))
+                            true
+                        }
+                    },
+                contentAlignment = Alignment.Center
             ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .fillMaxHeight(volume.coerceIn(0f, 1f))
+                        .align(Alignment.BottomCenter)
+                        .background(MaterialTheme.colorScheme.primary)
+                )
                 Text(
                     text = track.name.take(15),
                     modifier = Modifier.rotate(-90f),
@@ -433,8 +488,9 @@ private fun TrackRow(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(if (isMuted) appColors.border else appColors.trackToggle)
-                    .height(40.dp),
+                    .background(if (isMuted) appColors.meterRed else appColors.trackToggle)
+                    .height(30.dp)
+                    .clickable(onClick = onToggleMute),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
@@ -442,15 +498,34 @@ private fun TrackRow(
                         if (isMuted) R.string.track_muted else R.string.track_enabled
                     ),
                     modifier = Modifier
-                        .fillMaxSize()
-                        .clickable(onClick = onToggleMute)
-                        .padding(2.dp)
                         .semantics {
                             testTag = "track-mute-${track.id}"
                             contentDescription = muteDescription
                             role = Role.Button
                         },
-                    color = if (isMuted) appColors.mutedText else appColors.mainText,
+                    color = if (isMuted) Color.Black else appColors.mainText,
+                    textAlign = TextAlign.Center
+                )
+            }
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(30.dp)
+                    .background(
+                        if (isSolo) appColors.meterRed else appColors.card,
+                    )
+                    .clickable(onClick = onToggleSolo),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = stringResource(R.string.track_solo),
+                    color = if (isSolo) Color.Black else appColors.mutedText,
+                    modifier = Modifier
+                        .semantics {
+                            testTag = "track-solo-${track.id}"
+                            contentDescription = soloDescription
+                            role = Role.Button
+                        },
                     textAlign = TextAlign.Center
                 )
             }

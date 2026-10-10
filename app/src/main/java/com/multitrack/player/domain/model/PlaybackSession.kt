@@ -9,5 +9,7 @@ data class PlaybackSession(
     val initialBpm: Int,
     val isLoopEnabled: Boolean = true,
     val isMetronomeEnabled: Boolean = false,
-    val mutedTrackIds: Set<String> = emptySet()
+    val mutedTrackIds: Set<String> = emptySet(),
+    val soloTrackIds: Set<String> = emptySet(),
+    val trackVolumes: Map<String, Float> = emptyMap()
 )
