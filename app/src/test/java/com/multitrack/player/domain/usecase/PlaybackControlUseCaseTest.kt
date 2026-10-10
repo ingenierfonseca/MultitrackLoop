@@ -54,6 +54,12 @@ class PlaybackControlUseCaseTest {
     }
 
     @Test
+    fun `track mute forwards selected id and state to engine`() {
+        useCase.setTrackMuted("track-1", true)
+        verify { engine.setTrackMuted("track-1", true) }
+    }
+
+    @Test
     fun `play pause stop forward to engine`() {
         useCase.play()
         useCase.pause()

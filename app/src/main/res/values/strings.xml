@@ -37,6 +37,9 @@
     <string name="loading">Cargando…</string>
     <string name="error_generic">Error</string>
     <string name="track_enabled">ON</string>
+    <string name="track_muted">MUTE</string>
+    <string name="track_mute_action">Silenciar %1$s</string>
+    <string name="track_unmute_action">Activar sonido de %1$s</string>
     <string name="track_file_formats">MP3 / WAV</string>
     <string name="bpm_range">%1$d – %2$d</string>
     <string name="track_selection_empty">Aún no has agregado pistas</string>

@@ -13,6 +13,7 @@ private data class ProjectDocument(
     val name: String,
     val bpm: Int,
     val isLoopEnabled: Boolean,
+    val mutedTrackIds: List<String> = emptyList(),
     val tracks: List<ProjectTrack>
 )
 
@@ -37,6 +38,7 @@ object PlaybackProjectJsonCodec {
             name = project.name,
             bpm = project.bpm,
             isLoopEnabled = project.isLoopEnabled,
+            mutedTrackIds = project.mutedTrackIds.toList(),
             tracks = project.tracks.map { track ->
                 ProjectTrack(
                     id = track.id,
@@ -58,6 +60,7 @@ object PlaybackProjectJsonCodec {
             name = document.name,
             bpm = document.bpm,
             isLoopEnabled = document.isLoopEnabled,
+            mutedTrackIds = document.mutedTrackIds.toSet(),
             tracks = document.tracks.map { track ->
                 AudioTrack(
                     id = track.id,

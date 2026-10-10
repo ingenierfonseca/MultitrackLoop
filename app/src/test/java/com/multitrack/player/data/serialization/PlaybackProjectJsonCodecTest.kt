@@ -29,7 +29,8 @@ class PlaybackProjectJsonCodecTest {
                 )
             ),
             bpm = 124,
-            isLoopEnabled = false
+            isLoopEnabled = false,
+            mutedTrackIds = setOf("track-2")
         )
 
         assertEquals(project, PlaybackProjectJsonCodec.decode(PlaybackProjectJsonCodec.encode(project)))

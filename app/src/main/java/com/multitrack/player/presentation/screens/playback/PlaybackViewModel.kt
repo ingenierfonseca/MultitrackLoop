@@ -60,7 +60,8 @@ class PlaybackViewModel @Inject constructor(
                     PlaybackSession(
                         tracks = current.tracks + track,
                         initialBpm = current.currentBpm,
-                        isLoopEnabled = current.isLoopEnabled
+                        isLoopEnabled = current.isLoopEnabled,
+                        mutedTrackIds = current.mutedTrackIds
                     )
                 )
                 awaitEnginePreparation()
@@ -104,7 +105,8 @@ class PlaybackViewModel @Inject constructor(
                         name = projectName,
                         tracks = playback.tracks,
                         bpm = playback.currentBpm,
-                        isLoopEnabled = playback.isLoopEnabled
+                        isLoopEnabled = playback.isLoopEnabled,
+                        mutedTrackIds = playback.mutedTrackIds
                     ),
                     destinationUri
                 )
@@ -142,7 +144,8 @@ class PlaybackViewModel @Inject constructor(
                         PlaybackSession(
                             tracks = project.tracks,
                             initialBpm = project.bpm,
-                            isLoopEnabled = project.isLoopEnabled
+                            isLoopEnabled = project.isLoopEnabled,
+                            mutedTrackIds = project.mutedTrackIds
                         )
                     )
                 awaitEnginePreparation()
@@ -195,6 +198,12 @@ class PlaybackViewModel @Inject constructor(
 
     fun onToggleLoop(enabled: Boolean) {
         if (!engine.state.value.isLoading) control.setLoop(enabled)
+    }
+
+    fun onToggleTrackMute(trackId: String) {
+        val current = engine.state.value
+        if (current.isLoading || current.tracks.none { it.id == trackId }) return
+        control.setTrackMuted(trackId, trackId !in current.mutedTrackIds)
     }
 
     fun onIncreaseBpm() {

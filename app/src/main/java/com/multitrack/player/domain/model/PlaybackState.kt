@@ -13,6 +13,7 @@ data class PlaybackState(
     val durationMs: Long = 0L,
     val isLoading: Boolean = false,
     val tracks: List<AudioTrack> = emptyList(),
+    val mutedTrackIds: Set<String> = emptySet(),
     val error: AudioError? = null
 ) {
     companion object {

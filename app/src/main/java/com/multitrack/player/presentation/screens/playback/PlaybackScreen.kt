@@ -11,6 +11,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -48,6 +49,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
@@ -299,7 +303,12 @@ private fun ReadyView(
                 .fillMaxWidth()
                 .weight(1f),
         ) {
-            TrackList(state.tracks, Modifier.weight(1f))
+            TrackList(
+                tracks = state.tracks,
+                modifier = Modifier.weight(1f),
+                mutedTrackIds = state.mutedTrackIds,
+                onToggleMute = vm::onToggleTrackMute
+            )
             Column(
                 modifier = Modifier
                 .clip(RoundedCornerShape(16.dp))
@@ -363,20 +372,34 @@ private fun ReadyView(
 @Composable
 private fun TrackList(
     tracks: List<AudioTrack>,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    mutedTrackIds: Set<String> = emptySet(),
+    onToggleMute: (String) -> Unit = {}
 ) {
     LazyRow(
         modifier = modifier.fillMaxHeight(),
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         items(items = tracks, key = { it.id }) { track ->
-            TrackRow(track.name)
+            TrackRow(
+                track = track,
+                isMuted = track.id in mutedTrackIds,
+                onToggleMute = { onToggleMute(track.id) }
+            )
         }
     }
 }
 @Composable
-private fun TrackRow(name: String) {
+private fun TrackRow(
+    track: AudioTrack,
+    isMuted: Boolean,
+    onToggleMute: () -> Unit
+) {
     val appColors = LocalAppThemeColors.current
+    val muteDescription = stringResource(
+        if (isMuted) R.string.track_unmute_action else R.string.track_mute_action,
+        track.name
+    )
     Row(
         horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
@@ -393,13 +416,13 @@ private fun TrackRow(name: String) {
         ) {
             Box(
                 modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.primary),
-                contentAlignment = Alignment.Center
+                .weight(1f)
+                .fillMaxWidth()
+                .background(MaterialTheme.colorScheme.primary),
+            contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = name.take(15),
+                    text = track.name.take(15),
                     modifier = Modifier.rotate(-90f),
                     style = MaterialTheme.typography.bodyLarge,
                     color = appColors.mainText
@@ -408,14 +431,25 @@ private fun TrackRow(name: String) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(appColors.trackToggle)
+                    .background(if (isMuted) appColors.border else appColors.trackToggle)
                     .height(40.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = stringResource(R.string.track_enabled),
-                    modifier = Modifier.padding(2.dp),
-                    color = appColors.mainText
+                    text = stringResource(
+                        if (isMuted) R.string.track_muted else R.string.track_enabled
+                    ),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clickable(onClick = onToggleMute)
+                        .padding(2.dp)
+                        .semantics {
+                            testTag = "track-mute-${track.id}"
+                            contentDescription = muteDescription
+                            role = Role.Button
+                        },
+                    color = if (isMuted) appColors.mutedText else appColors.mainText,
+                    textAlign = TextAlign.Center
                 )
             }
         }

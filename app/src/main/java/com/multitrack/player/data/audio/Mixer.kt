@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.math.tanh
 
 /**
@@ -55,7 +56,7 @@ class Mixer(
     private val sources = mutableListOf<PcmSource>()
 
     /** Per-source gain in linear units. Default 1.0. */
-    private val gains = mutableListOf<Float>()
+    private val gains = CopyOnWriteArrayList<Float>()
 
     /** Currently selected BPM. Used to communicate speed factor to sources. */
     @Volatile private var currentBpm: Int = 120

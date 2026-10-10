@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -75,6 +76,9 @@ class MultitrackPlaybackEngine(
                 val durationMs = computeMixDurationMs(sources)
                 mixer.configure(sources, session.initialBpm)
                 mixer.setLoop(session.isLoopEnabled)
+                session.tracks.forEachIndexed { index, track ->
+                    if (track.id in session.mutedTrackIds) mixer.setGain(index, 0f)
+                }
                 preparedTracks = session.tracks
                 resume = false
                 _state.value = _state.value.copy(
@@ -86,6 +90,7 @@ class MultitrackPlaybackEngine(
                     isPaused = false,
                     isLoopEnabled = session.isLoopEnabled,
                     isLoading = false,
+                    mutedTrackIds = session.mutedTrackIds.intersect(session.tracks.map { it.id }.toSet()),
                     error = null
                 )
             } catch (t: Throwable) {
@@ -130,6 +135,21 @@ class MultitrackPlaybackEngine(
     override fun setLoop(enabled: Boolean) {
         mixer.setLoop(enabled)
         _state.value = _state.value.copy(isLoopEnabled = enabled)
+    }
+
+    override fun setTrackMuted(trackId: String, muted: Boolean) {
+        val trackIndex = preparedTracks.indexOfFirst { it.id == trackId }
+        if (trackIndex < 0) return
+        mixer.setGain(trackIndex, if (muted) 0f else 1f)
+        _state.update { state ->
+            state.copy(
+                mutedTrackIds = if (muted) {
+                    state.mutedTrackIds + trackId
+                } else {
+                    state.mutedTrackIds - trackId
+                }
+            )
+        }
     }
 
     override fun setBpm(bpm: Int) {

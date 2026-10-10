@@ -33,6 +33,9 @@ interface PlaybackEngine {
     /** Enables/disables looping the whole mix. */
     fun setLoop(enabled: Boolean)
 
+    /** Mutes or unmutes a single source without affecting the other tracks. */
+    fun setTrackMuted(trackId: String, muted: Boolean)
+
     /** Changes the playback speed (BPM). Clamped to engine limits. */
     fun setBpm(bpm: Int)
 

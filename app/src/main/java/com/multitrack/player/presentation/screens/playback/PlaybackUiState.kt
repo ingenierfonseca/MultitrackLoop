@@ -15,6 +15,7 @@ sealed interface PlaybackUiState {
         val positionMs: Long,
         val durationMs: Long,
         val isLoading: Boolean = false,
+        val mutedTrackIds: Set<String> = emptySet(),
         val error: AudioError?
     ) : PlaybackUiState
 
@@ -33,6 +34,7 @@ internal fun PlaybackState.toUi(): PlaybackUiState = if (error != null && tracks
         positionMs = positionMs,
         durationMs = durationMs,
         isLoading = isLoading,
+        mutedTrackIds = mutedTrackIds,
         error = error
     )
 }
