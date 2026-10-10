@@ -48,6 +48,15 @@ class PlaybackClock {
         publish()
     }
 
+    fun seekToMs(positionMs: Long) {
+        val safePositionMs = positionMs.coerceAtLeast(0L)
+        val frames = (safePositionMs.toDouble() * outputSampleRate / 1000.0)
+            .coerceAtMost(Long.MAX_VALUE.toDouble())
+            .toLong()
+        positionFrames.set(frames)
+        publish()
+    }
+
     /**
      * Called by the audio thread after each write to AudioTrack.
      * All inputs are in OUTPUT frames and channels.

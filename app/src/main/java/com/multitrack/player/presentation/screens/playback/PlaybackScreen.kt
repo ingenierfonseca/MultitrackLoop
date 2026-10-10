@@ -79,6 +79,7 @@ import com.multitrack.player.domain.model.TrackMeterLevel
 import com.multitrack.player.presentation.components.AppHeader
 import com.multitrack.player.presentation.components.BpmControl
 import com.multitrack.player.presentation.components.PlaybackControls
+import com.multitrack.player.presentation.components.ProjectTempoDialog
 import com.multitrack.player.presentation.theme.LocalAppThemeColors
 
 @Composable
@@ -90,19 +91,28 @@ fun PlaybackScreen(
     val activity = context as? ComponentActivity
     var showProjectNameDialog by remember { mutableStateOf(false) }
     var projectNameInput by remember { mutableStateOf("") }
+    var showNewProjectWarning by remember { mutableStateOf(false) }
+    var showNewProjectTempo by remember { mutableStateOf(false) }
+    var newProjectBpmInput by remember { mutableStateOf("120") }
+    var newProjectBpmError by remember { mutableStateOf<String?>(null) }
     var showLoopQuantizationWarning by remember { mutableStateOf(false) }
     var shortLoopTrackNames by remember { mutableStateOf(emptyList<String>()) }
 
     val audioPicker = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        if (uri != null) {
+        contract = ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris ->
+        val pickedFiles = uris.map { uri ->
             persistUriPermission(context, uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
             val name = queryDisplayName(context, uri)
                 ?: uri.lastPathSegment
                 ?: context.getString(R.string.unknown_audio_name)
-            viewModel.addTrack(uri.toString(), name, context.contentResolver.getType(uri))
+            PickedAudioFile(
+                uri = uri.toString(),
+                displayName = name,
+                mimeType = context.contentResolver.getType(uri)
+            )
         }
+        viewModel.addTracks(pickedFiles)
     }
     val createProjectDocument = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/json")
@@ -157,6 +167,7 @@ fun PlaybackScreen(
                         },
                         onSaveProject = viewModel::saveProject,
                         onLoadProject = { projectPicker.launch(arrayOf("*/*")) },
+                        onNewProject = { showNewProjectWarning = true },
                         onToggleLoopQuantization = {
                             if (s.isLoopQuantized) {
                                 viewModel.onToggleLoopQuantized(false)
@@ -214,6 +225,69 @@ fun PlaybackScreen(
             dismissButton = {
                 TextButton(onClick = { showProjectNameDialog = false }) {
                     Text(stringResource(R.string.action_cancel))
+                }
+            }
+        )
+    }
+
+    if (showNewProjectWarning) {
+        AlertDialog(
+            onDismissRequest = { showNewProjectWarning = false },
+            title = { Text(stringResource(R.string.new_project_warning_title)) },
+            text = { Text(stringResource(R.string.new_project_warning_message)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showNewProjectWarning = false
+                        newProjectBpmInput = "120"
+                        newProjectBpmError = null
+                        showNewProjectTempo = true
+                    }
+                ) {
+                    Text(stringResource(R.string.project_new))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showNewProjectWarning = false }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            }
+        )
+    }
+
+    if (showNewProjectTempo) {
+        val parsedBpm = newProjectBpmInput.toIntOrNull()
+        val bpmError = newProjectBpmError ?: when {
+            parsedBpm == null -> "invalid"
+            parsedBpm < com.multitrack.player.domain.model.PlaybackState.MIN_BPM -> "min"
+            parsedBpm > com.multitrack.player.domain.model.PlaybackState.MAX_BPM -> "max"
+            else -> null
+        }
+        ProjectTempoDialog(
+            bpmInput = newProjectBpmInput,
+            error = bpmError,
+            titleRes = R.string.new_project_tempo_title,
+            continueEnabled = bpmError == null,
+            onDismiss = { showNewProjectTempo = false },
+            onContinue = {
+                val bpm = newProjectBpmInput.toIntOrNull()
+                if (bpm != null && bpm in
+                    com.multitrack.player.domain.model.PlaybackState.MIN_BPM..
+                    com.multitrack.player.domain.model.PlaybackState.MAX_BPM
+                ) {
+                    showNewProjectTempo = false
+                    viewModel.createNewProject(bpm)
+                }
+            },
+            onBpmChange = { text ->
+                newProjectBpmInput = text
+                val value = text.toIntOrNull()
+                newProjectBpmError = when {
+                    text.isBlank() -> "invalid"
+                    value == null -> "invalid"
+                    value < com.multitrack.player.domain.model.PlaybackState.MIN_BPM -> "min"
+                    value > com.multitrack.player.domain.model.PlaybackState.MAX_BPM -> "max"
+                    else -> null
                 }
             }
         )
@@ -294,9 +368,10 @@ private fun ProjectOperationOverlay(operation: ProjectOperation?) {
     val appColors = LocalAppThemeColors.current
     val message = stringResource(
         when (operation) {
-            ProjectOperation.ADDING_TRACK -> R.string.loading_track
+            ProjectOperation.ADDING_TRACK -> R.string.loading_tracks
             ProjectOperation.SAVING -> R.string.saving_project
             ProjectOperation.LOADING -> R.string.loading_project
+            ProjectOperation.CREATING_PROJECT -> R.string.creating_project
             null -> R.string.loading
         }
     )
@@ -340,6 +415,7 @@ private fun ReadyView(
     onSaveProjectAs: () -> Unit,
     onSaveProject: () -> Unit,
     onLoadProject: () -> Unit,
+    onNewProject: () -> Unit,
     onToggleLoopQuantization: () -> Unit
 ) {
     val appColors = LocalAppThemeColors.current
@@ -361,7 +437,8 @@ private fun ReadyView(
             onToggleLoopQuantization = onToggleLoopQuantization,
             onSaveProjectAs = onSaveProjectAs,
             onSaveProject = onSaveProject,
-            onLoadProject = onLoadProject
+            onLoadProject = onLoadProject,
+            onNewProject = onNewProject
         )
         Row(
             horizontalArrangement = Arrangement.spacedBy(24.dp),
@@ -736,7 +813,8 @@ fun PlaybackScreenPreview() {
                     onToggleLoopQuantization = { isLoopQuantized.value = !isLoopQuantized.value },
                     onSaveProjectAs = {},
                     onSaveProject = {},
-                    onLoadProject = {}
+                    onLoadProject = {},
+                    onNewProject = {}
                 )
                 Row(
                     modifier = Modifier

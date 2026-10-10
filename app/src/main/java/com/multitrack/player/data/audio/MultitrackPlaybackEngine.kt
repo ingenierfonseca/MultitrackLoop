@@ -12,6 +12,7 @@ import com.multitrack.player.domain.model.PlaybackSession
 import com.multitrack.player.domain.model.PlaybackState
 import com.multitrack.player.domain.repository.PlaybackEngine
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -20,7 +21,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.roundToLong
 
@@ -42,7 +42,7 @@ class MultitrackPlaybackEngine(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private val clock = PlaybackClock()
-    private val mixer = Mixer(clock, ::onEngineError)
+    private val mixer = Mixer(clock, ::onEngineError, ::onPlaybackCompleted)
 
     private val _state = MutableStateFlow(
         PlaybackState(tracks = emptyList(), isLoading = true)
@@ -61,90 +61,95 @@ class MultitrackPlaybackEngine(
     /** Tracks whether we are resuming from pause (true) or starting fresh (false). */
     @Volatile private var resume: Boolean = false
 
-    override fun prepare(session: PlaybackSession) {
+    override suspend fun prepare(session: PlaybackSession): Result<Unit> {
         // Stop anything in flight and free previous sources
         mixer.release()
-        _state.value = _state.value.copy(
+        _state.update {
+            it.copy(
             error = null,
             isPlaying = false,
             isPaused = false,
             isLoading = true
-        )
+            )
+        }
 
-        scope.launch {
-            try {
-                val sources = withContext(Dispatchers.IO) {
-                    session.tracks.map { track -> decodeToSource(track) }
-                }
-                val durationMs = computeMixDurationMs(sources)
-                baseDurationMs = durationMs
-                val originalBpm = session.originalBpm.coerceIn(
-                    PlaybackState.MIN_BPM,
-                    PlaybackState.MAX_BPM
-                )
-                val initialBpm = session.initialBpm.coerceIn(
-                    PlaybackState.MIN_BPM,
-                    PlaybackState.MAX_BPM
-                )
-                val preparedSessionTracks = session.tracks.zip(sources).map { (track, source) ->
-                    val trackBaseDurationMs =
-                        source.totalFramesAtBusRate * 1000L / PlaybackClock.OUTPUT_SAMPLE_RATE
-                    track.copy(
-                        durationMs = durationAtBpm(
-                            trackBaseDurationMs,
-                            originalBpm,
-                            initialBpm
-                        )
+        return try {
+            val sources = withContext(Dispatchers.IO) {
+                session.tracks.map { track -> decodeToSource(track) }
+            }
+            val durationMs = computeMixDurationMs(sources)
+            baseDurationMs = durationMs
+            val originalBpm = session.originalBpm.coerceIn(
+                PlaybackState.MIN_BPM,
+                PlaybackState.MAX_BPM
+            )
+            val initialBpm = session.initialBpm.coerceIn(
+                PlaybackState.MIN_BPM,
+                PlaybackState.MAX_BPM
+            )
+            val preparedSessionTracks = session.tracks.zip(sources).map { (track, source) ->
+                val trackBaseDurationMs =
+                    source.totalFramesAtBusRate * 1000L / PlaybackClock.OUTPUT_SAMPLE_RATE
+                track.copy(
+                    durationMs = durationAtBpm(
+                        trackBaseDurationMs,
+                        originalBpm,
+                        initialBpm
                     )
-                }
-                baseTrackDurationMs = session.tracks.zip(sources).associate { (track, source) ->
-                    track.id to source.totalFramesAtBusRate * 1000L / PlaybackClock.OUTPUT_SAMPLE_RATE
-                }
-                mixer.configure(
-                    sources = sources,
-                    currentBpm = initialBpm,
-                    originalBpm = originalBpm,
-                    loopQuantized = session.isLoopQuantized,
-                    trackIds = session.tracks.map { it.id }
-                )
-                mixer.setLoop(session.isLoopEnabled)
-                mixer.setMetronomeEnabled(session.isMetronomeEnabled)
-                val trackIds = session.tracks.map { it.id }.toSet()
-                preparedTracks = preparedSessionTracks
-                resume = false
-                _state.update { state ->
-                    state.copy(
-                        tracks = preparedSessionTracks,
-                        currentBpm = initialBpm,
-                        originalBpm = originalBpm,
-                        durationMs = playbackDuration(
-                            originalBpm,
-                            initialBpm,
-                            session.isLoopEnabled,
-                            session.isLoopQuantized
-                        ),
-                        positionMs = 0L,
-                        isPlaying = false,
-                        isPaused = false,
-                        isLoopEnabled = session.isLoopEnabled,
-                        isLoopQuantized = session.isLoopQuantized,
-                        isMetronomeEnabled = session.isMetronomeEnabled,
-                        isLoading = false,
-                        mutedTrackIds = session.mutedTrackIds.intersect(trackIds),
-                        soloTrackIds = session.soloTrackIds.intersect(trackIds),
-                        trackVolumes = session.trackVolumes
-                            .filterKeys { it in trackIds }
-                            .mapValues { (_, volume) -> volume.coerceIn(0f, 1f) },
-                        error = null
-                    )
-                }
-                applyTrackGains(_state.value)
-            } catch (t: Throwable) {
-                _state.value = _state.value.copy(
-                    isLoading = false,
-                    error = AudioError.DecoderError(t.message)
                 )
             }
+            baseTrackDurationMs = session.tracks.zip(sources).associate { (track, source) ->
+                track.id to source.totalFramesAtBusRate * 1000L / PlaybackClock.OUTPUT_SAMPLE_RATE
+            }
+            mixer.configure(
+                sources = sources,
+                currentBpm = initialBpm,
+                originalBpm = originalBpm,
+                loopQuantized = session.isLoopQuantized,
+                trackIds = session.tracks.map { it.id }
+            )
+            mixer.setLoop(session.isLoopEnabled)
+            mixer.setMetronomeEnabled(session.isMetronomeEnabled)
+            val trackIds = session.tracks.map { it.id }.toSet()
+            preparedTracks = preparedSessionTracks
+            resume = false
+            _state.update { state ->
+                state.copy(
+                    tracks = preparedSessionTracks,
+                    currentBpm = initialBpm,
+                    originalBpm = originalBpm,
+                    durationMs = playbackDuration(
+                        originalBpm,
+                        initialBpm,
+                        session.isLoopEnabled,
+                        session.isLoopQuantized
+                    ),
+                    positionMs = 0L,
+                    isPlaying = false,
+                    isPaused = false,
+                    isLoopEnabled = session.isLoopEnabled,
+                    isLoopQuantized = session.isLoopQuantized,
+                    isMetronomeEnabled = session.isMetronomeEnabled,
+                    isLoading = false,
+                    mutedTrackIds = session.mutedTrackIds.intersect(trackIds),
+                    soloTrackIds = session.soloTrackIds.intersect(trackIds),
+                    trackVolumes = session.trackVolumes
+                        .filterKeys { it in trackIds }
+                        .mapValues { (_, volume) -> volume.coerceIn(0f, 1f) },
+                    error = null
+                )
+            }
+            applyTrackGains(_state.value)
+            Result.success(Unit)
+        } catch (cancelled: CancellationException) {
+            _state.update { it.copy(isLoading = false) }
+            throw cancelled
+        } catch (error: Throwable) {
+            val audioError = error as? AudioError ?: AudioError.DecoderError(error.message)
+            _state.update {
+                it.copy(isLoading = false, error = audioError)
+            }
+            Result.failure(audioError)
         }
     }
 
@@ -272,6 +277,19 @@ class MultitrackPlaybackEngine(
 
     private fun onEngineError(error: AudioError) {
         _state.value = _state.value.copy(isPlaying = false, isPaused = false, error = error)
+    }
+
+    private fun onPlaybackCompleted() {
+        resume = false
+        val durationMs = _state.value.durationMs
+        clock.seekToMs(durationMs)
+        _state.update {
+            it.copy(
+                isPlaying = false,
+                isPaused = false,
+                positionMs = durationMs
+            )
+        }
     }
 
     private fun applyTrackGains(state: PlaybackState) {

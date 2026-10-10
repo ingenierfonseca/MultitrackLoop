@@ -16,7 +16,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -43,22 +42,29 @@ class PlaybackViewModel @Inject constructor(
     private val _projectUiState = MutableStateFlow(PlaybackProjectUiState())
     val projectUiState: StateFlow<PlaybackProjectUiState> = _projectUiState.asStateFlow()
 
-    fun bindSession(session: PlaybackSession) {
+    suspend fun bindSession(session: PlaybackSession) {
         engine.prepare(session)
     }
 
     fun addTrack(uri: String, displayName: String, mime: String?) {
-        if (engine.state.value.isPlaying || engine.state.value.isLoading || _projectUiState.value.isBusy) return
+        addTracks(listOf(PickedAudioFile(uri, displayName, mime)))
+    }
+
+    fun addTracks(files: List<PickedAudioFile>) {
+        if (files.isEmpty() || engine.state.value.isPlaying || engine.state.value.isLoading || _projectUiState.value.isBusy) return
         viewModelScope.launch {
             _projectUiState.update {
                 it.copy(isBusy = true, operation = ProjectOperation.ADDING_TRACK, error = null)
             }
             try {
-                val track = resolvePickedTrack(uri, displayName, mime).getOrThrow()
+                val resolvedTracks = files.mapNotNull { file ->
+                    resolvePickedTrack(file.uri, file.displayName, file.mimeType).getOrNull()
+                }
+                require(resolvedTracks.isNotEmpty()) { "No supported audio tracks were selected" }
                 val current = engine.state.value
                 engine.prepare(
                     PlaybackSession(
-                        tracks = current.tracks + track,
+                        tracks = current.tracks + resolvedTracks,
                         initialBpm = current.currentBpm,
                         originalBpm = current.originalBpm,
                         isLoopEnabled = current.isLoopEnabled,
@@ -68,8 +74,7 @@ class PlaybackViewModel @Inject constructor(
                         soloTrackIds = current.soloTrackIds,
                         trackVolumes = current.trackVolumes
                     )
-                )
-                awaitEnginePreparation()
+                ).getOrThrow()
                 _projectUiState.update {
                     it.copy(isBusy = false, operation = null, error = null)
                 }
@@ -77,6 +82,37 @@ class PlaybackViewModel @Inject constructor(
                 if (error is CancellationException) throw error
                 _projectUiState.update {
                     it.copy(
+                        isBusy = false,
+                        operation = null,
+                        error = "project_operation_failed"
+                    )
+                }
+            }
+        }
+    }
+
+    fun createNewProject(originalBpm: Int) {
+        if (engine.state.value.isPlaying || engine.state.value.isLoading || _projectUiState.value.isBusy) return
+        val bpm = originalBpm.coerceIn(PlaybackState.MIN_BPM, PlaybackState.MAX_BPM)
+        viewModelScope.launch {
+            _projectUiState.update {
+                it.copy(isBusy = true, operation = ProjectOperation.CREATING_PROJECT, error = null)
+            }
+            try {
+                engine.prepare(
+                    PlaybackSession(
+                        tracks = emptyList(),
+                        initialBpm = bpm,
+                        originalBpm = bpm
+                    )
+                ).getOrThrow()
+                _projectUiState.value = PlaybackProjectUiState()
+            } catch (error: Exception) {
+                if (error is CancellationException) throw error
+                _projectUiState.update {
+                    it.copy(
+                        savedUri = null,
+                        projectName = null,
                         isBusy = false,
                         operation = null,
                         error = "project_operation_failed"
@@ -162,8 +198,7 @@ class PlaybackViewModel @Inject constructor(
                             soloTrackIds = project.soloTrackIds,
                             trackVolumes = project.trackVolumes
                         )
-                    )
-                awaitEnginePreparation()
+                    ).getOrThrow()
                 _projectUiState.update {
                     it.copy(
                         savedUri = sourceUri,
@@ -188,13 +223,6 @@ class PlaybackViewModel @Inject constructor(
 
     fun clearProjectError() {
         _projectUiState.update { it.copy(error = null) }
-    }
-
-    private suspend fun awaitEnginePreparation(): PlaybackState {
-        engine.state.first { it.isLoading }
-        val result = engine.state.first { !it.isLoading }
-        result.error?.let { throw it }
-        return result
     }
 
     fun onPlayPause() {
@@ -271,5 +299,12 @@ data class PlaybackProjectUiState(
 enum class ProjectOperation {
     ADDING_TRACK,
     SAVING,
-    LOADING
+    LOADING,
+    CREATING_PROJECT
 }
+
+data class PickedAudioFile(
+    val uri: String,
+    val displayName: String,
+    val mimeType: String?
+)

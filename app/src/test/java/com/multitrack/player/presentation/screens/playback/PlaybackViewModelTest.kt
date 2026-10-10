@@ -9,15 +9,20 @@ import com.multitrack.player.domain.usecase.LoadPlaybackProjectUseCase
 import com.multitrack.player.domain.usecase.ResolvePickedTrackUseCase
 import com.multitrack.player.domain.usecase.SavePlaybackProjectUseCase
 import io.mockk.every
+import io.mockk.coEvery
 import io.mockk.mockk
+import io.mockk.coVerify
 import io.mockk.verify
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
 
@@ -132,10 +137,39 @@ class PlaybackViewModelTest {
     }
 
     @Test
-    fun `bindSession calls engine prepare`() {
+    fun `bindSession calls engine prepare`() = runTest {
+        coEvery { engine.prepare(any()) } returns Result.success(Unit)
         val vm = viewModel()
         vm.bindSession(PlaybackSession(emptyList(), 120))
-        verify { engine.prepare(any()) }
+        coVerify { engine.prepare(any()) }
+    }
+
+    @Test
+    fun `creating an empty project completes without waiting for a loading transition`() = runTest {
+        coEvery { engine.prepare(any()) } coAnswers {
+            val session = firstArg<PlaybackSession>()
+            state.value = state.value.copy(isLoading = true)
+            state.value = state.value.copy(
+                isLoading = false,
+                tracks = session.tracks,
+                currentBpm = session.initialBpm,
+                originalBpm = session.originalBpm
+            )
+            Result.success(Unit)
+        }
+
+        val vm = viewModel()
+        vm.createNewProject(132)
+
+        assertFalse(vm.projectUiState.value.isBusy)
+        assertNull(vm.projectUiState.value.savedUri)
+        coVerify {
+            engine.prepare(match { session ->
+                session.tracks.isEmpty() &&
+                    session.initialBpm == 132 &&
+                    session.originalBpm == 132
+            })
+        }
     }
 
     @Test

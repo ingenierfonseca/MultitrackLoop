@@ -35,7 +35,9 @@ fun ProjectTempoDialog(
     error: String?,
     onDismiss: () -> Unit,
     onContinue: () -> Unit,
-    onBpmChange: (String) -> Unit
+    onBpmChange: (String) -> Unit,
+    titleRes: Int = R.string.track_selection_title,
+    continueEnabled: Boolean = true
 ) {
     Dialog(
         onDismissRequest = onDismiss,
@@ -55,7 +57,7 @@ fun ProjectTempoDialog(
             verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
             Text(
-                text = stringResource(R.string.track_selection_title),
+                text = stringResource(titleRes),
                 fontSize = 25.sp,
                 lineHeight = 32.sp,
                 fontWeight = FontWeight.SemiBold
@@ -67,7 +69,6 @@ fun ProjectTempoDialog(
                 onBpmChange = onBpmChange
             )
 
-            val continueEnabled = true
             Button(
                 onClick = onContinue,
                 enabled = continueEnabled,

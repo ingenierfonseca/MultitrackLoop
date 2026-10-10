@@ -50,7 +50,8 @@ import kotlin.math.tanh
  */
 class Mixer(
     private val clock: PlaybackClock,
-    private val errorSink: (AudioError) -> Unit
+    private val errorSink: (AudioError) -> Unit,
+    private val onPlaybackCompleted: () -> Unit = {}
 ) {
 
     private companion object {
@@ -58,7 +59,7 @@ class Mixer(
         const val QUANTIZED_LOOP_BARS = 4
     }
 
-    private var audioTrack: AudioTrack? = null
+    @Volatile private var audioTrack: AudioTrack? = null
     private var job: Job? = null
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -141,6 +142,7 @@ class Mixer(
             return
         }
         try {
+            releaseAudioTrack()
             val minBuf = AudioTrack.getMinBufferSize(
                 PlaybackClock.OUTPUT_SAMPLE_RATE,
                 AudioFormat.CHANNEL_OUT_STEREO,
@@ -149,7 +151,7 @@ class Mixer(
             // Use a generous buffer to absorb jitter. ~200ms at 44.1kHz stereo float.
             val bufBytes = maxOf(minBuf, PlaybackClock.OUTPUT_SAMPLE_RATE * 2 * 4 / 5)
 
-            audioTrack = AudioTrack.Builder()
+            val outputTrack = AudioTrack.Builder()
                 .setAudioAttributes(
                     AudioAttributes.Builder()
                         .setUsage(AudioAttributes.USAGE_MEDIA)
@@ -166,12 +168,13 @@ class Mixer(
                 .setBufferSizeInBytes(bufBytes)
                 .setTransferMode(AudioTrack.MODE_STREAM)
                 .build()
+            audioTrack = outputTrack
 
             clock.start()
             _isRunning.value = true
-            audioTrack?.play()
+            outputTrack.play()
 
-            job = scope.launch { runMixerLoop() }
+            job = scope.launch { runMixerLoop(outputTrack) }
         } catch (t: Throwable) {
             errorSink(AudioError.PlaybackError(t.message))
             _isRunning.value = false
@@ -182,13 +185,7 @@ class Mixer(
         _isRunning.value = false
         job?.cancel()
         job = null
-        try {
-            audioTrack?.pause()
-            audioTrack?.flush()
-            audioTrack?.stop()
-        } catch (_: Throwable) { /* ignore */ }
-        audioTrack?.release()
-        audioTrack = null
+        releaseAudioTrack()
         clock.stop()
         _meterLevels.value = sourceIds.associateWith { TrackMeterLevel.Silent }
     }
@@ -216,7 +213,7 @@ class Mixer(
         clock.reset()
     }
 
-    private suspend fun runMixerLoop() = withContext(Dispatchers.Default) {
+    private suspend fun runMixerLoop(outputTrack: AudioTrack) = withContext(Dispatchers.Default) {
         val frameChunk = 1024 // ~23 ms @ 44.1 kHz; good trade-off latency / overhead
         val mixBuf = FloatArray(frameChunk * 2)
         val chunkBuf = FloatArray(frameChunk * 2)
@@ -225,6 +222,7 @@ class Mixer(
         val smoothedRms = FloatArray(sources.size)
         val heldPeaks = FloatArray(sources.size)
         var lastPublishNanos = System.nanoTime()
+        var completedNaturally = false
 
         if (!quantizedCycleInitialized) {
             quantizedCycleActive = loop && loopQuantized
@@ -321,8 +319,7 @@ class Mixer(
                         mixBuf[i + 1] = softClip(r)
                         i += 2
                     }
-                    val track = audioTrack ?: break
-                    val written = track.write(mixBuf, 0, len, AudioTrack.WRITE_BLOCKING)
+                    val written = outputTrack.write(mixBuf, 0, len, AudioTrack.WRITE_BLOCKING)
                     if (written > 0) {
                         clock.onFramesProduced(written / 2)
                     }
@@ -339,6 +336,7 @@ class Mixer(
                         quantizedCycleInitialized = true
                     } else {
                         _isRunning.value = false
+                        completedNaturally = true
                         break
                     }
                 } else if (!anyActive && !shouldWriteSilenceForQuantizedLoop) {
@@ -355,6 +353,7 @@ class Mixer(
                         }
                     } else {
                         _isRunning.value = false
+                        completedNaturally = true
                         break
                     }
                 }
@@ -373,8 +372,16 @@ class Mixer(
             }
         } catch (t: Throwable) {
             errorSink(AudioError.PlaybackError(t.message))
+            _isRunning.value = false
         } finally {
-            clock.publish()
+            if (!_isRunning.value) {
+                releaseAudioTrack(outputTrack)
+                clock.stop()
+                _meterLevels.value = sourceIds.associateWith { TrackMeterLevel.Silent }
+                if (completedNaturally) onPlaybackCompleted()
+            } else {
+                clock.publish()
+            }
         }
     }
 
@@ -412,6 +419,21 @@ class Mixer(
         if (amplitude <= 0f) return 0f
         val decibels = 20f * log10(amplitude)
         return ((decibels + 60f) / 60f).coerceIn(0f, 1f)
+    }
+
+    @Synchronized
+    private fun releaseAudioTrack(expected: AudioTrack? = null) {
+        val output = audioTrack ?: return
+        if (expected != null && output !== expected) return
+        audioTrack = null
+        try {
+            output.pause()
+            output.flush()
+            output.stop()
+        } catch (_: Throwable) {
+            // The track may already have completed or been stopped externally.
+        }
+        output.release()
     }
 
     private fun resetLoopAndMetronomePhase() {

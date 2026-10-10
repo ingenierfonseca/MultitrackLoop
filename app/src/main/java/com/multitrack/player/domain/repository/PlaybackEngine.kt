@@ -16,7 +16,7 @@ interface PlaybackEngine {
     val state: StateFlow<PlaybackState>
 
     /** Loads all tracks of [session] and pre-decodes them into PCM. */
-    fun prepare(session: PlaybackSession)
+    suspend fun prepare(session: PlaybackSession): Result<Unit>
 
     /** Starts (or resumes) playback from the current position. */
     fun play()

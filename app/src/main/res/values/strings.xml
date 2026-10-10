@@ -68,9 +68,13 @@
     <string name="demo_solo_short">S</string>
     <string name="loop_label">LOOP</string>
     <string name="project_save_as">Guardar proyecto</string>
+    <string name="project_new">Nuevo proyecto</string>
     <string name="project_save">Guardar</string>
     <string name="project_load">Cargar proyecto</string>
     <string name="project_name_title">Nombre del proyecto</string>
+    <string name="new_project_tempo_title">Tempo del nuevo proyecto</string>
+    <string name="new_project_warning_title">¿Crear un proyecto nuevo?</string>
+    <string name="new_project_warning_message">Se perderán las pistas y los ajustes de esta sesión. El archivo de proyecto guardado no se eliminará.</string>
     <string name="project_name_hint">Nombre</string>
     <string name="project_name_required">Introduce un nombre para el proyecto</string>
     <string name="action_cancel">Cancelar</string>
@@ -78,6 +82,8 @@
     <string name="loading_track">Agregando pista…</string>
     <string name="saving_project">Guardando proyecto…</string>
     <string name="loading_project">Cargando proyecto…</string>
+    <string name="creating_project">Creando proyecto…</string>
+    <string name="loading_tracks">Cargando pistas…</string>
     <string name="project_operation_failed">No se pudo completar la operación del proyecto</string>
     <string name="unknown_audio_name">Audio</string>
     <string name="loop_quantization_warning_title">Pistas más cortas que 4 compases</string>

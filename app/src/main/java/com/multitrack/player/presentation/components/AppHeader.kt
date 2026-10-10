@@ -51,6 +51,7 @@ fun AppHeader(
     onAddTrack: () -> Unit,
     onToggleMetronome: () -> Unit,
     onToggleLoopQuantization: () -> Unit,
+    onNewProject: () -> Unit,
     onSaveProjectAs: () -> Unit,
     onSaveProject: () -> Unit,
     onLoadProject: () -> Unit
@@ -118,6 +119,14 @@ fun AppHeader(
                 expanded = menuExpanded,
                 onDismissRequest = { menuExpanded = false }
             ) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.project_new)) },
+                    enabled = !isPlaying && !isBusy,
+                    onClick = {
+                        menuExpanded = false
+                        onNewProject()
+                    }
+                )
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.project_save_as)) },
                     enabled = !isPlaying && !isBusy,
