@@ -54,6 +54,12 @@ class PlaybackControlUseCaseTest {
     }
 
     @Test
+    fun `loop quantization forwards to engine`() {
+        useCase.setLoopQuantized(true)
+        verify { engine.setLoopQuantized(true) }
+    }
+
+    @Test
     fun `track mute forwards selected id and state to engine`() {
         useCase.setTrackMuted("track-1", true)
         verify { engine.setTrackMuted("track-1", true) }

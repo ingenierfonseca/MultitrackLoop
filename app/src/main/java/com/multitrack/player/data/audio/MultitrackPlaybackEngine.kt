@@ -56,6 +56,7 @@ class MultitrackPlaybackEngine(
 
     private var preparedTracks: List<AudioTrack> = emptyList()
     private var baseDurationMs: Long = 0L
+    private var baseTrackDurationMs: Map<String, Long> = emptyMap()
 
     /** Tracks whether we are resuming from pause (true) or starting fresh (false). */
     @Volatile private var resume: Boolean = false
@@ -85,27 +86,48 @@ class MultitrackPlaybackEngine(
                     PlaybackState.MIN_BPM,
                     PlaybackState.MAX_BPM
                 )
+                val preparedSessionTracks = session.tracks.zip(sources).map { (track, source) ->
+                    val trackBaseDurationMs =
+                        source.totalFramesAtBusRate * 1000L / PlaybackClock.OUTPUT_SAMPLE_RATE
+                    track.copy(
+                        durationMs = durationAtBpm(
+                            trackBaseDurationMs,
+                            originalBpm,
+                            initialBpm
+                        )
+                    )
+                }
+                baseTrackDurationMs = session.tracks.zip(sources).associate { (track, source) ->
+                    track.id to source.totalFramesAtBusRate * 1000L / PlaybackClock.OUTPUT_SAMPLE_RATE
+                }
                 mixer.configure(
                     sources = sources,
                     currentBpm = initialBpm,
                     originalBpm = originalBpm,
+                    loopQuantized = session.isLoopQuantized,
                     trackIds = session.tracks.map { it.id }
                 )
                 mixer.setLoop(session.isLoopEnabled)
                 mixer.setMetronomeEnabled(session.isMetronomeEnabled)
                 val trackIds = session.tracks.map { it.id }.toSet()
-                preparedTracks = session.tracks
+                preparedTracks = preparedSessionTracks
                 resume = false
                 _state.update { state ->
                     state.copy(
-                        tracks = session.tracks,
+                        tracks = preparedSessionTracks,
                         currentBpm = initialBpm,
                         originalBpm = originalBpm,
-                        durationMs = durationAtBpm(originalBpm, initialBpm),
+                        durationMs = playbackDuration(
+                            originalBpm,
+                            initialBpm,
+                            session.isLoopEnabled,
+                            session.isLoopQuantized
+                        ),
                         positionMs = 0L,
                         isPlaying = false,
                         isPaused = false,
                         isLoopEnabled = session.isLoopEnabled,
+                        isLoopQuantized = session.isLoopQuantized,
                         isMetronomeEnabled = session.isMetronomeEnabled,
                         isLoading = false,
                         mutedTrackIds = session.mutedTrackIds.intersect(trackIds),
@@ -158,7 +180,32 @@ class MultitrackPlaybackEngine(
 
     override fun setLoop(enabled: Boolean) {
         mixer.setLoop(enabled)
-        _state.value = _state.value.copy(isLoopEnabled = enabled)
+        _state.update { state ->
+            state.copy(
+                isLoopEnabled = enabled,
+                durationMs = playbackDuration(
+                    state.originalBpm,
+                    state.currentBpm,
+                    enabled,
+                    state.isLoopQuantized
+                )
+            )
+        }
+    }
+
+    override fun setLoopQuantized(enabled: Boolean) {
+        mixer.setLoopQuantized(enabled)
+        _state.update { state ->
+            state.copy(
+                isLoopQuantized = enabled,
+                durationMs = playbackDuration(
+                    state.originalBpm,
+                    state.currentBpm,
+                    state.isLoopEnabled,
+                    enabled
+                )
+            )
+        }
     }
 
     override fun setTrackMuted(trackId: String, muted: Boolean) {
@@ -201,8 +248,21 @@ class MultitrackPlaybackEngine(
     override fun setBpm(bpm: Int) {
         val clamped = bpm.coerceIn(PlaybackState.MIN_BPM, PlaybackState.MAX_BPM)
         mixer.setBpm(clamped)
-        val newDurationMs = durationAtBpm(_state.value.originalBpm, clamped)
-        _state.update { it.copy(currentBpm = clamped, durationMs = newDurationMs) }
+        _state.update { state ->
+            state.copy(
+                currentBpm = clamped,
+                durationMs = playbackDuration(
+                    state.originalBpm,
+                    clamped,
+                    state.isLoopEnabled,
+                    state.isLoopQuantized
+                ),
+                tracks = state.tracks.map { track ->
+                    val baseDuration = baseTrackDurationMs[track.id] ?: return@map track
+                    track.copy(durationMs = durationAtBpm(baseDuration, state.originalBpm, clamped))
+                }
+            )
+        }
     }
 
     override fun release() {
@@ -248,10 +308,21 @@ class MultitrackPlaybackEngine(
         return longestFrames * 1000L / PlaybackClock.OUTPUT_SAMPLE_RATE
     }
 
-    private fun durationAtBpm(originalBpm: Int, currentBpm: Int): Long {
+    private fun durationAtBpm(baseDurationMs: Long, originalBpm: Int, currentBpm: Int): Long {
         if (baseDurationMs <= 0L) return 0L
         return (baseDurationMs.toDouble() * originalBpm.coerceAtLeast(1) / currentBpm.coerceAtLeast(1))
             .roundToLong()
             .coerceAtLeast(0L)
+    }
+
+    private fun playbackDuration(
+        originalBpm: Int,
+        currentBpm: Int,
+        isLoopEnabled: Boolean,
+        isLoopQuantized: Boolean
+    ): Long = if (isLoopEnabled && isLoopQuantized) {
+        (16L * 60_000L / currentBpm.coerceAtLeast(1)).coerceAtLeast(1L)
+    } else {
+        durationAtBpm(baseDurationMs, originalBpm, currentBpm)
     }
 }

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Multitrack Player</string>
-    <string name="track_selection_title">Seleccionar pistas</string>
+    <string name="track_selection_title">Ingresar el tiempo original del proyecto</string>
     <string name="add_tracks">+ Agregar pistas</string>
     <string name="selected_tracks">Pistas seleccionadas</string>
     <string name="tempo_label">Tempo</string>
@@ -34,6 +34,7 @@
     <string name="cd_menu">Menú</string>
     <string name="cd_toggle_loop">Cambiar loop</string>
     <string name="cd_toggle_metronome">Activar o desactivar metrónomo</string>
+    <string name="cd_toggle_loop_adjustment">Ajustar loop a cuatro compases</string>
     <string name="cd_settings">Ajustes</string>
     <string name="loading">Cargando…</string>
     <string name="error_generic">Error</string>
@@ -79,4 +80,7 @@
     <string name="loading_project">Cargando proyecto…</string>
     <string name="project_operation_failed">No se pudo completar la operación del proyecto</string>
     <string name="unknown_audio_name">Audio</string>
+    <string name="loop_quantization_warning_title">Pistas más cortas que 4 compases</string>
+    <string name="loop_quantization_warning_message">Estas pistas terminarán antes de completar el ciclo y quedarán en silencio hasta la repetición:</string>
+    <string name="loop_quantization_enable">Activar ajuste</string>
 </resources>

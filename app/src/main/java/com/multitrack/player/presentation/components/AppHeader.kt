@@ -13,6 +13,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -46,8 +47,10 @@ fun AppHeader(
     isBusy: Boolean,
     canSaveProject: Boolean,
     isMetronomeEnabled: Boolean,
+    isLoopQuantized: Boolean,
     onAddTrack: () -> Unit,
     onToggleMetronome: () -> Unit,
+    onToggleLoopQuantization: () -> Unit,
     onSaveProjectAs: () -> Unit,
     onSaveProject: () -> Unit,
     onLoadProject: () -> Unit
@@ -97,6 +100,13 @@ fun AppHeader(
             isEnabled = isMetronomeEnabled,
             enabled = !isBusy,
             onClick = onToggleMetronome
+        )
+        HeaderIcon(
+            icon = Icons.Default.Tune,
+            contentDescriptionRes = R.string.cd_toggle_loop_adjustment,
+            tint = if (isLoopQuantized) appColors.accent else appColors.mutedText,
+            enabled = !isBusy,
+            onClick = onToggleLoopQuantization
         )
         androidx.compose.foundation.layout.Box {
             HeaderIcon(

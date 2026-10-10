@@ -82,10 +82,7 @@ class TrackSelectionViewModel @Inject constructor(
     fun onContinue() {
         val current = _state.value as? TrackSelectionUiState.Editing ?: return
         val parsed = current.bpmInput.toIntOrNull()
-        if (current.tracks.isEmpty()) {
-            _state.update { current.copy(tracksError = "empty") }
-            return
-        }
+
         if (!validateBpm(parsed)) {
             _state.update { current.copy(bpmError = "invalid") }
             return
@@ -99,16 +96,6 @@ class TrackSelectionViewModel @Inject constructor(
             .onFailure {
                 _state.update { current.copy(bpmError = "invalid") }
             }
-    }
-
-    fun bpmErrorMessage(): String? {
-        val s = _state.value as? TrackSelectionUiState.Editing ?: return null
-        return when (s.bpmError) {
-            "min" -> "min"
-            "max" -> "max"
-            "invalid" -> "invalid"
-            else -> null
-        }
     }
 
     /**

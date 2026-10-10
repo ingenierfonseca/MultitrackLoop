@@ -62,6 +62,7 @@ class PlaybackViewModel @Inject constructor(
                         initialBpm = current.currentBpm,
                         originalBpm = current.originalBpm,
                         isLoopEnabled = current.isLoopEnabled,
+                        isLoopQuantized = current.isLoopQuantized,
                         isMetronomeEnabled = current.isMetronomeEnabled,
                         mutedTrackIds = current.mutedTrackIds,
                         soloTrackIds = current.soloTrackIds,
@@ -111,6 +112,7 @@ class PlaybackViewModel @Inject constructor(
                         bpm = playback.currentBpm,
                         originalBpm = playback.originalBpm,
                         isLoopEnabled = playback.isLoopEnabled,
+                        isLoopQuantized = playback.isLoopQuantized,
                         isMetronomeEnabled = playback.isMetronomeEnabled,
                         mutedTrackIds = playback.mutedTrackIds,
                         soloTrackIds = playback.soloTrackIds,
@@ -154,6 +156,7 @@ class PlaybackViewModel @Inject constructor(
                             initialBpm = project.bpm,
                             originalBpm = project.originalBpm,
                             isLoopEnabled = project.isLoopEnabled,
+                            isLoopQuantized = project.isLoopQuantized,
                             isMetronomeEnabled = project.isMetronomeEnabled,
                             mutedTrackIds = project.mutedTrackIds,
                             soloTrackIds = project.soloTrackIds,
@@ -210,6 +213,10 @@ class PlaybackViewModel @Inject constructor(
 
     fun onToggleLoop(enabled: Boolean) {
         if (!engine.state.value.isLoading) control.setLoop(enabled)
+    }
+
+    fun onToggleLoopQuantized(enabled: Boolean) {
+        if (!engine.state.value.isLoading) control.setLoopQuantized(enabled)
     }
 
     fun onToggleTrackMute(trackId: String) {

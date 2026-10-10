@@ -53,6 +53,11 @@ class Mixer(
     private val errorSink: (AudioError) -> Unit
 ) {
 
+    private companion object {
+        const val BEATS_PER_BAR = 4
+        const val QUANTIZED_LOOP_BARS = 4
+    }
+
     private var audioTrack: AudioTrack? = null
     private var job: Job? = null
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -75,18 +80,26 @@ class Mixer(
 
     /** Loop flag. */
     @Volatile private var loop: Boolean = true
+    @Volatile private var loopQuantized: Boolean = false
 
     /** Synthesized click is mixed exclusively into the left output channel. */
     @Volatile private var metronomeEnabled: Boolean = false
+    @Volatile private var metronomeBeatPhase: Double = 0.0
+    @Volatile private var metronomeClickAgeFrames: Int = -1
+    @Volatile private var beatsInQuantizedLoop: Double = 0.0
+    @Volatile private var quantizedCycleActive: Boolean = false
+    @Volatile private var quantizedCycleInitialized: Boolean = false
 
     fun configure(
         sources: List<PcmSource>,
         currentBpm: Int,
         originalBpm: Int,
+        loopQuantized: Boolean,
         trackIds: List<String>
     ) {
         // If previously running, stop first
         stop()
+        clock.reset()
         this.sources.clear()
         this.sourceIds = trackIds.take(sources.size)
         this.gains.clear()
@@ -97,6 +110,8 @@ class Mixer(
         _meterLevels.value = sourceIds.associateWith { TrackMeterLevel.Silent }
         this.currentBpm = currentBpm
         this.originalBpm = originalBpm.coerceAtLeast(1)
+        this.loopQuantized = loopQuantized
+        resetLoopAndMetronomePhase()
     }
 
     fun setBpm(bpm: Int) {
@@ -105,6 +120,10 @@ class Mixer(
 
     fun setLoop(enabled: Boolean) {
         loop = enabled
+    }
+
+    fun setLoopQuantized(enabled: Boolean) {
+        loopQuantized = enabled
     }
 
     fun setMetronomeEnabled(enabled: Boolean) {
@@ -148,7 +167,6 @@ class Mixer(
                 .setTransferMode(AudioTrack.MODE_STREAM)
                 .build()
 
-            clock.reset()
             clock.start()
             _isRunning.value = true
             audioTrack?.play()
@@ -178,6 +196,7 @@ class Mixer(
     fun reset() {
         // Used by SeekToStart semantics: keep state, reset sources and clock.
         for (s in sources) s.seekToStart()
+        resetLoopAndMetronomePhase()
         clock.reset()
     }
 
@@ -193,6 +212,7 @@ class Mixer(
     /** Called by the engine when the ViewModel asks for a fresh play after stop. */
     fun softResetForRestart() {
         for (s in sources) s.seekToStart()
+        resetLoopAndMetronomePhase()
         clock.reset()
     }
 
@@ -204,8 +224,15 @@ class Mixer(
         val sourcePeaks = FloatArray(sources.size)
         val smoothedRms = FloatArray(sources.size)
         val heldPeaks = FloatArray(sources.size)
-        var metronomeFramePosition = 0L
         var lastPublishNanos = System.nanoTime()
+
+        if (!quantizedCycleInitialized) {
+            quantizedCycleActive = loop && loopQuantized
+            beatsInQuantizedLoop = 0.0
+            metronomeBeatPhase = 0.0
+            metronomeClickAgeFrames = if (metronomeEnabled) 0 else -1
+            quantizedCycleInitialized = true
+        }
 
         try {
             while (isActive && _isRunning.value) {
@@ -239,27 +266,54 @@ class Mixer(
 
                 updateTrackMeters(sourceRms, sourcePeaks, smoothedRms, heldPeaks, frameChunk)
 
-                if (anyActive) {
-                    val framesPerBeat =
-                        (PlaybackClock.OUTPUT_SAMPLE_RATE * 60L / currentBpm.coerceAtLeast(1))
-                            .coerceAtLeast(1L)
+                val shouldWriteSilenceForQuantizedLoop = loop && quantizedCycleActive
+                val shouldRender = anyActive || shouldWriteSilenceForQuantizedLoop
+                var renderedFrames = frameChunk
+                var quantizedLoopBoundaryReached = false
+
+                if (shouldRender) {
                     val clickFrames = PlaybackClock.OUTPUT_SAMPLE_RATE / 30
                     for (frame in 0 until frameChunk) {
-                        val frameInBeat = metronomeFramePosition % framesPerBeat
-                        if (metronomeEnabled && frameInBeat < clickFrames) {
-                            val seconds = frameInBeat.toDouble() / PlaybackClock.OUTPUT_SAMPLE_RATE
+                        if (!metronomeEnabled) {
+                            metronomeClickAgeFrames = -1
+                        } else if (metronomeClickAgeFrames in 0 until clickFrames) {
+                            val seconds = metronomeClickAgeFrames.toDouble() /
+                                PlaybackClock.OUTPUT_SAMPLE_RATE
                             val click = sin(2.0 * PI * 1_800.0 * seconds) * exp(-seconds * 90.0)
                             mixBuf[frame * 2] += (click * 0.45).toFloat()
+                            metronomeClickAgeFrames++
+                            if (metronomeClickAgeFrames >= clickFrames) metronomeClickAgeFrames = -1
                         }
-                        metronomeFramePosition++
+
+                        val beatIncrement = currentBpm.coerceAtLeast(1).toDouble() /
+                            (60.0 * PlaybackClock.OUTPUT_SAMPLE_RATE)
+                        metronomeBeatPhase += beatIncrement
+                        if (metronomeBeatPhase >= 1.0) {
+                            metronomeBeatPhase -= 1.0
+                            metronomeClickAgeFrames = if (metronomeEnabled) 0 else -1
+                        }
+
+                        if (shouldWriteSilenceForQuantizedLoop) {
+                            beatsInQuantizedLoop += beatIncrement
+                            if (beatsInQuantizedLoop >= BEATS_PER_BAR * QUANTIZED_LOOP_BARS) {
+                                renderedFrames = frame + 1
+                                quantizedLoopBoundaryReached = true
+                                break
+                            }
+                        }
                     }
                 }
 
-                // Soft-clip + write
-                if (anyActive) {
+                if (renderedFrames < frameChunk) {
+                    for (i in renderedFrames * 2 until mixBuf.size) mixBuf[i] = 0f
+                }
+
+                // Soft-clip + write. In quantized mode, write silence after a
+                // short source ends so the entire four-bar cycle is preserved.
+                if (shouldRender) {
                     // Soft-clip tanh to avoid hard clipping on summed signals.
                     var i = 0
-                    val len = mixBuf.size
+                    val len = renderedFrames * 2
                     while (i < len) {
                         val l = mixBuf[i]
                         val r = mixBuf[i + 1]
@@ -268,16 +322,37 @@ class Mixer(
                         i += 2
                     }
                     val track = audioTrack ?: break
-                    val written = track.write(mixBuf, 0, mixBuf.size, AudioTrack.WRITE_BLOCKING)
+                    val written = track.write(mixBuf, 0, len, AudioTrack.WRITE_BLOCKING)
                     if (written > 0) {
                         clock.onFramesProduced(written / 2)
                     }
-                } else {
-                    // All sources exhausted. If looping, rewind them; else stop.
+                }
+
+                if (quantizedLoopBoundaryReached) {
                     if (loop) {
-                        for (s in sources) s.seekToStart()
+                        sources.forEach { it.seekToStart() }
                         clock.reset()
-                        metronomeFramePosition = 0L
+                        beatsInQuantizedLoop = 0.0
+                        metronomeBeatPhase = 0.0
+                        metronomeClickAgeFrames = if (metronomeEnabled) 0 else -1
+                        quantizedCycleActive = loopQuantized
+                        quantizedCycleInitialized = true
+                    } else {
+                        _isRunning.value = false
+                        break
+                    }
+                } else if (!anyActive && !shouldWriteSilenceForQuantizedLoop) {
+                    // Natural loop mode restarts when every source reaches EOF.
+                    if (loop) {
+                        sources.forEach { it.seekToStart() }
+                        clock.reset()
+                        beatsInQuantizedLoop = 0.0
+                        quantizedCycleActive = loopQuantized
+                        quantizedCycleInitialized = true
+                        if (quantizedCycleActive) {
+                            metronomeBeatPhase = 0.0
+                            metronomeClickAgeFrames = if (metronomeEnabled) 0 else -1
+                        }
                     } else {
                         _isRunning.value = false
                         break
@@ -337,5 +412,13 @@ class Mixer(
         if (amplitude <= 0f) return 0f
         val decibels = 20f * log10(amplitude)
         return ((decibels + 60f) / 60f).coerceIn(0f, 1f)
+    }
+
+    private fun resetLoopAndMetronomePhase() {
+        metronomeBeatPhase = 0.0
+        metronomeClickAgeFrames = if (metronomeEnabled) 0 else -1
+        beatsInQuantizedLoop = 0.0
+        quantizedCycleActive = false
+        quantizedCycleInitialized = false
     }
 }

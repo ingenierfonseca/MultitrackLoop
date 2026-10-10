@@ -12,9 +12,6 @@ class CreatePlaybackSessionUseCase {
         tracks: List<com.multitrack.player.domain.model.AudioTrack>,
         bpm: Int
     ): Result<PlaybackSession> {
-        if (tracks.isEmpty()) {
-            return Result.failure(IllegalArgumentException("No tracks selected"))
-        }
         if (bpm !in PlaybackState.MIN_BPM..PlaybackState.MAX_BPM) {
             return Result.failure(IllegalArgumentException("Invalid BPM"))
         }

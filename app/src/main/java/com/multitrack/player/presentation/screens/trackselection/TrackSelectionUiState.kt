@@ -19,7 +19,7 @@ sealed interface TrackSelectionUiState {
         val transientError: AudioError? = null
     ) : TrackSelectionUiState {
         val isContinueEnabled: Boolean
-            get() = tracks.isNotEmpty() && bpmError == null
+            get() = bpmError == null
     }
 
     data class Validated(

@@ -70,6 +70,13 @@ class PlaybackViewModelTest {
     }
 
     @Test
+    fun `loop quantization toggle forwards to use case`() {
+        viewModel().onToggleLoopQuantized(true)
+
+        verify { control.setLoopQuantized(true) }
+    }
+
+    @Test
     fun `track mute toggles only the requested track`() {
         val track = com.multitrack.player.domain.model.AudioTrack(
             id = "track-1",

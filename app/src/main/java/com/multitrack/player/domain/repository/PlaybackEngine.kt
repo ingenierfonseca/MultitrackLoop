@@ -33,6 +33,9 @@ interface PlaybackEngine {
     /** Enables/disables looping the whole mix. */
     fun setLoop(enabled: Boolean)
 
+    /** Quantizes loop boundaries to four 4/4 bars. */
+    fun setLoopQuantized(enabled: Boolean)
+
     /** Mutes or unmutes a single source without affecting the other tracks. */
     fun setTrackMuted(trackId: String, muted: Boolean)
 

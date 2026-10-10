@@ -6,6 +6,7 @@ data class PlaybackProject(
     val bpm: Int,
     val originalBpm: Int = bpm,
     val isLoopEnabled: Boolean,
+    val isLoopQuantized: Boolean = false,
     val isMetronomeEnabled: Boolean = false,
     val mutedTrackIds: Set<String> = emptySet(),
     val soloTrackIds: Set<String> = emptySet(),

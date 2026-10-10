@@ -90,6 +90,8 @@ fun PlaybackScreen(
     val activity = context as? ComponentActivity
     var showProjectNameDialog by remember { mutableStateOf(false) }
     var projectNameInput by remember { mutableStateOf("") }
+    var showLoopQuantizationWarning by remember { mutableStateOf(false) }
+    var shortLoopTrackNames by remember { mutableStateOf(emptyList<String>()) }
 
     val audioPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
@@ -154,7 +156,23 @@ fun PlaybackScreen(
                             showProjectNameDialog = true
                         },
                         onSaveProject = viewModel::saveProject,
-                        onLoadProject = { projectPicker.launch(arrayOf("*/*")) }
+                        onLoadProject = { projectPicker.launch(arrayOf("*/*")) },
+                        onToggleLoopQuantization = {
+                            if (s.isLoopQuantized) {
+                                viewModel.onToggleLoopQuantized(false)
+                            } else {
+                                val fourBarsMs = 16L * 60_000L / s.bpm.coerceAtLeast(1)
+                                val shortTracks = s.tracks.filter {
+                                    it.durationMs == null || it.durationMs < fourBarsMs
+                                }
+                                if (shortTracks.isEmpty()) {
+                                    viewModel.onToggleLoopQuantized(true)
+                                } else {
+                                    shortLoopTrackNames = shortTracks.map { it.name }
+                                    showLoopQuantizationWarning = true
+                                }
+                            }
+                        }
                     )
                     if (s.isLoading || projectState.isBusy) {
                         ProjectOperationOverlay(projectState.operation)
@@ -195,6 +213,34 @@ fun PlaybackScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showProjectNameDialog = false }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            }
+        )
+    }
+
+    if (showLoopQuantizationWarning) {
+        AlertDialog(
+            onDismissRequest = { showLoopQuantizationWarning = false },
+            title = { Text(stringResource(R.string.loop_quantization_warning_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(stringResource(R.string.loop_quantization_warning_message))
+                    Text(shortLoopTrackNames.joinToString("\n"))
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showLoopQuantizationWarning = false
+                        viewModel.onToggleLoopQuantized(true)
+                    }
+                ) {
+                    Text(stringResource(R.string.loop_quantization_enable))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showLoopQuantizationWarning = false }) {
                     Text(stringResource(R.string.action_cancel))
                 }
             }
@@ -293,7 +339,8 @@ private fun ReadyView(
     onAddTrack: () -> Unit,
     onSaveProjectAs: () -> Unit,
     onSaveProject: () -> Unit,
-    onLoadProject: () -> Unit
+    onLoadProject: () -> Unit,
+    onToggleLoopQuantization: () -> Unit
 ) {
     val appColors = LocalAppThemeColors.current
     Column(
@@ -308,8 +355,10 @@ private fun ReadyView(
             isBusy = state.isLoading || projectState.isBusy,
             canSaveProject = projectState.canSave,
             isMetronomeEnabled = state.isMetronomeEnabled,
+            isLoopQuantized = state.isLoopQuantized,
             onAddTrack = onAddTrack,
             onToggleMetronome = vm::onToggleMetronome,
+            onToggleLoopQuantization = onToggleLoopQuantization,
             onSaveProjectAs = onSaveProjectAs,
             onSaveProject = onSaveProject,
             onLoadProject = onLoadProject
@@ -642,6 +691,7 @@ fun PlaybackScreenPreview() {
     val isPlaying = androidx.compose.runtime.remember { mutableStateOf(false) }
     val isLoopEnabled = androidx.compose.runtime.remember { mutableStateOf(true) }
     val isMetronomeEnabled = androidx.compose.runtime.remember { mutableStateOf(false) }
+    val isLoopQuantized = androidx.compose.runtime.remember { mutableStateOf(false) }
     val positionMs = androidx.compose.runtime.remember { androidx.compose.runtime.mutableLongStateOf(63_000L) }
     val durationMs = 185_000L
 
@@ -680,8 +730,10 @@ fun PlaybackScreenPreview() {
                     isBusy = false,
                     canSaveProject = false,
                     isMetronomeEnabled = isMetronomeEnabled.value,
+                    isLoopQuantized = isLoopQuantized.value,
                     onAddTrack = {},
                     onToggleMetronome = { isMetronomeEnabled.value = !isMetronomeEnabled.value },
+                    onToggleLoopQuantization = { isLoopQuantized.value = !isLoopQuantized.value },
                     onSaveProjectAs = {},
                     onSaveProject = {},
                     onLoadProject = {}
