@@ -10,6 +10,7 @@ import com.multitrack.player.domain.model.AudioFormat
 import com.multitrack.player.domain.model.AudioTrack
 import com.multitrack.player.domain.model.PlaybackSession
 import com.multitrack.player.domain.model.PlaybackState
+import com.multitrack.player.domain.model.MetronomeSubdivision
 import com.multitrack.player.domain.repository.PlaybackEngine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
@@ -66,6 +67,8 @@ class MultitrackPlaybackEngine(
     @Volatile private var resume: Boolean = false
     @Volatile private var countInEnabled: Boolean = false
     @Volatile private var countInBeats: Int = 4
+    @Volatile private var metronomeVolume: Float = 0.45f
+    @Volatile private var metronomeSubdivision: MetronomeSubdivision = MetronomeSubdivision.QUARTER_NOTE
 
     override suspend fun prepare(session: PlaybackSession): Result<Unit> {
         // Stop anything in flight and free previous sources
@@ -116,6 +119,8 @@ class MultitrackPlaybackEngine(
             )
             mixer.setLoop(session.isLoopEnabled)
             mixer.setMetronomeEnabled(session.isMetronomeEnabled)
+            mixer.setMetronomeVolume(metronomeVolume)
+            mixer.setMetronomeSubdivision(metronomeSubdivision)
             val trackIds = session.tracks.map { it.id }.toSet()
             preparedTracks = preparedSessionTracks
             resume = false
@@ -221,6 +226,16 @@ class MultitrackPlaybackEngine(
     override fun setCountInSettings(enabled: Boolean, beats: Int) {
         countInEnabled = enabled
         countInBeats = beats.coerceIn(1, 4)
+    }
+
+    override fun setMetronomeVolume(volume: Float) {
+        metronomeVolume = volume.coerceIn(0f, 1f)
+        mixer.setMetronomeVolume(metronomeVolume)
+    }
+
+    override fun setMetronomeSubdivision(subdivision: MetronomeSubdivision) {
+        metronomeSubdivision = subdivision
+        mixer.setMetronomeSubdivision(subdivision)
     }
 
     override fun setLoopQuantized(enabled: Boolean) {

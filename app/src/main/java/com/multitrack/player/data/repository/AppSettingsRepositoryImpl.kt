@@ -44,7 +44,7 @@ class AppSettingsRepositoryImpl(
                 metronomeVolume = (preferences[Keys.MetronomeVolume] ?: 0.45f).coerceIn(0f, 1f),
                 metronomeSubdivision = preferences[Keys.MetronomeSubdivision]
                     ?.let { stored -> MetronomeSubdivision.entries.firstOrNull { it.name == stored } }
-                    ?: MetronomeSubdivision.EIGHTH_NOTE
+                    ?: MetronomeSubdivision.QUARTER_NOTE
             )
         }
 

@@ -2,6 +2,7 @@ package com.multitrack.player.presentation.screens.playback
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.multitrack.player.domain.model.AppSettings
 import com.multitrack.player.domain.model.PlaybackState
 import kotlinx.coroutines.CancellationException
 import com.multitrack.player.domain.model.PlaybackProject
@@ -270,8 +271,10 @@ class PlaybackViewModel @Inject constructor(
         control.setMetronomeEnabled(!current.isMetronomeEnabled)
     }
 
-    fun applyCountInSettings(enabled: Boolean, beats: Int) {
-        control.setCountInSettings(enabled, beats.coerceIn(1, 4))
+    fun applyAppSettings(settings: AppSettings) {
+        control.setCountInSettings(settings.countInEnabled, settings.countInBeats.coerceIn(1, 4))
+        control.setMetronomeVolume(settings.metronomeVolume.coerceIn(0f, 1f))
+        control.setMetronomeSubdivision(settings.metronomeSubdivision)
     }
 
     fun onIncreaseBpm() {

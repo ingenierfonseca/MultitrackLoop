@@ -154,13 +154,12 @@ fun PlaybackScreen(
     LaunchedEffect(
         appSettingsState.isLoaded,
         appSettingsState.settings.countInEnabled,
-        appSettingsState.settings.countInBeats
+        appSettingsState.settings.countInBeats,
+        appSettingsState.settings.metronomeVolume,
+        appSettingsState.settings.metronomeSubdivision
     ) {
         if (appSettingsState.isLoaded) {
-            viewModel.applyCountInSettings(
-                appSettingsState.settings.countInEnabled,
-                appSettingsState.settings.countInBeats
-            )
+            viewModel.applyAppSettings(appSettingsState.settings)
             countInSettingsApplied = true
         } else {
             countInSettingsApplied = false
@@ -194,17 +193,28 @@ fun PlaybackScreen(
                         onToggleCountIn = {
                             val enabled = !appSettingsState.settings.countInEnabled
                             appSettingsViewModel.setCountInEnabled(enabled)
-                            viewModel.applyCountInSettings(enabled, appSettingsState.settings.countInBeats)
+                            viewModel.applyAppSettings(
+                                appSettingsState.settings.copy(countInEnabled = enabled)
+                            )
                         },
                         onCountInBeatsChange = { beats ->
                             appSettingsViewModel.setCountInBeats(beats)
-                            viewModel.applyCountInSettings(
-                                appSettingsState.settings.countInEnabled,
-                                beats
+                            viewModel.applyAppSettings(
+                                appSettingsState.settings.copy(countInBeats = beats)
                             )
                         },
-                        onMetronomeVolumeChange = appSettingsViewModel::setMetronomeVolume,
-                        onMetronomeSubdivisionChange = appSettingsViewModel::setMetronomeSubdivision,
+                        onMetronomeVolumeChange = { volume ->
+                            appSettingsViewModel.setMetronomeVolume(volume)
+                            viewModel.applyAppSettings(
+                                appSettingsState.settings.copy(metronomeVolume = volume)
+                            )
+                        },
+                        onMetronomeSubdivisionChange = { subdivision ->
+                            appSettingsViewModel.setMetronomeSubdivision(subdivision)
+                            viewModel.applyAppSettings(
+                                appSettingsState.settings.copy(metronomeSubdivision = subdivision)
+                            )
+                        },
                         onNewProject = { showNewProjectWarning = true },
                         onToggleLoopQuantization = {
                             if (s.isLoopQuantized) {
@@ -864,7 +874,7 @@ fun PlaybackScreenPreview() {
                     countInEnabled = false,
                     countInBeats = 4,
                     metronomeVolume = 0.45f,
-                    metronomeSubdivision = MetronomeSubdivision.EIGHTH_NOTE,
+                    metronomeSubdivision = MetronomeSubdivision.QUARTER_NOTE,
                     isLoopQuantized = isLoopQuantized.value,
                     onAddTrack = {},
                     onToggleMetronome = { isMetronomeEnabled.value = !isMetronomeEnabled.value },

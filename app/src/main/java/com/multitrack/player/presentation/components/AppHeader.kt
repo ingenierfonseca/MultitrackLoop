@@ -215,16 +215,16 @@ fun AppHeader(
                 )
                 if (subdivisionMenuExpanded) {
                     DropdownMenuItem(
-                        text = { Text(stringResource(R.string.subdivision_eighth_note)) },
+                        text = { Text(stringResource(R.string.subdivision_quarter_note)) },
                         onClick = {
-                            onMetronomeSubdivisionChange(MetronomeSubdivision.EIGHTH_NOTE)
+                            onMetronomeSubdivisionChange(MetronomeSubdivision.QUARTER_NOTE)
                             subdivisionMenuExpanded = false
                         }
                     )
                     DropdownMenuItem(
-                        text = { Text(stringResource(R.string.subdivision_sixteenth_note)) },
+                        text = { Text(stringResource(R.string.subdivision_eighth_note)) },
                         onClick = {
-                            onMetronomeSubdivisionChange(MetronomeSubdivision.SIXTEENTH_NOTE)
+                            onMetronomeSubdivisionChange(MetronomeSubdivision.EIGHTH_NOTE)
                             subdivisionMenuExpanded = false
                         }
                     )
@@ -281,8 +281,8 @@ fun AppHeader(
 @Composable
 private fun subdivisionLabel(subdivision: MetronomeSubdivision): String = stringResource(
     when (subdivision) {
+        MetronomeSubdivision.QUARTER_NOTE -> R.string.subdivision_quarter_note
         MetronomeSubdivision.EIGHTH_NOTE -> R.string.subdivision_eighth_note
-        MetronomeSubdivision.SIXTEENTH_NOTE -> R.string.subdivision_sixteenth_note
     }
 )
 

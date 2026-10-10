@@ -2,6 +2,7 @@ package com.multitrack.player.domain.repository
 
 import com.multitrack.player.domain.model.PlaybackSession
 import com.multitrack.player.domain.model.PlaybackState
+import com.multitrack.player.domain.model.MetronomeSubdivision
 import kotlinx.coroutines.flow.StateFlow
 
 /**
@@ -35,6 +36,10 @@ interface PlaybackEngine {
 
     /** Configures the app-level count-in used when playback starts from zero. */
     fun setCountInSettings(enabled: Boolean, beats: Int)
+
+    fun setMetronomeVolume(volume: Float)
+
+    fun setMetronomeSubdivision(subdivision: MetronomeSubdivision)
 
     /** Quantizes loop boundaries to four 4/4 bars. */
     fun setLoopQuantized(enabled: Boolean)

@@ -1,6 +1,7 @@
 package com.multitrack.player.domain.usecase
 
 import com.multitrack.player.domain.model.PlaybackState
+import com.multitrack.player.domain.model.MetronomeSubdivision
 import com.multitrack.player.domain.repository.PlaybackEngine
 
 /**
@@ -20,6 +21,9 @@ class PlaybackControlUseCase(
     fun seekToStart() = engine.seekToStart()
     fun setLoop(enabled: Boolean) = engine.setLoop(enabled)
     fun setCountInSettings(enabled: Boolean, beats: Int) = engine.setCountInSettings(enabled, beats)
+    fun setMetronomeVolume(volume: Float) = engine.setMetronomeVolume(volume)
+    fun setMetronomeSubdivision(subdivision: MetronomeSubdivision) =
+        engine.setMetronomeSubdivision(subdivision)
     fun setLoopQuantized(enabled: Boolean) = engine.setLoopQuantized(enabled)
     fun setTrackMuted(trackId: String, muted: Boolean) = engine.setTrackMuted(trackId, muted)
     fun setMetronomeEnabled(enabled: Boolean) = engine.setMetronomeEnabled(enabled)

@@ -1,6 +1,7 @@
 package com.multitrack.player.domain.usecase
 
 import com.multitrack.player.domain.model.PlaybackState
+import com.multitrack.player.domain.model.MetronomeSubdivision
 import com.multitrack.player.domain.repository.PlaybackEngine
 import io.mockk.every
 import io.mockk.mockk
@@ -69,6 +70,15 @@ class PlaybackControlUseCaseTest {
     fun `metronome toggle forwards state to engine`() {
         useCase.setMetronomeEnabled(true)
         verify { engine.setMetronomeEnabled(true) }
+    }
+
+    @Test
+    fun `metronome settings forward volume and subdivision`() {
+        useCase.setMetronomeVolume(0.7f)
+        useCase.setMetronomeSubdivision(MetronomeSubdivision.EIGHTH_NOTE)
+
+        verify { engine.setMetronomeVolume(0.7f) }
+        verify { engine.setMetronomeSubdivision(MetronomeSubdivision.EIGHTH_NOTE) }
     }
 
     @Test

@@ -6,6 +6,7 @@ import android.media.AudioManager
 import android.media.AudioTrack
 import com.multitrack.player.data.audio.source.PcmSource
 import com.multitrack.player.domain.model.AudioError
+import com.multitrack.player.domain.model.MetronomeSubdivision
 import com.multitrack.player.domain.model.TrackMeterLevel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
@@ -90,6 +91,8 @@ class Mixer(
 
     /** Synthesized click is mixed exclusively into the left output channel. */
     @Volatile private var metronomeEnabled: Boolean = false
+    @Volatile private var metronomeVolume: Float = 0.45f
+    @Volatile private var metronomeSubdivision: MetronomeSubdivision = MetronomeSubdivision.QUARTER_NOTE
     @Volatile private var metronomeBeatPhase: Double = 0.0
     @Volatile private var metronomeClickAgeFrames: Int = -1
     @Volatile private var beatsInQuantizedLoop: Double = 0.0
@@ -134,6 +137,14 @@ class Mixer(
 
     fun setMetronomeEnabled(enabled: Boolean) {
         metronomeEnabled = enabled
+    }
+
+    fun setMetronomeVolume(volume: Float) {
+        metronomeVolume = volume.coerceIn(0f, 1f)
+    }
+
+    fun setMetronomeSubdivision(subdivision: MetronomeSubdivision) {
+        metronomeSubdivision = subdivision
     }
 
     fun setGain(index: Int, gain: Float) {
@@ -246,9 +257,12 @@ class Mixer(
                 val framesPerBeat = PlaybackClock.OUTPUT_SAMPLE_RATE * 60.0 / bpmAtCountInStart
                 val totalCountInFrames = (framesPerBeat * countInBeats).roundToLong()
                     .coerceAtLeast(1L)
+                val countInSubdivision = metronomeSubdivision
+                val framesPerPulse = framesPerBeat / countInSubdivision.pulsesPerBeat
+                val totalCountInPulses = countInBeats * countInSubdivision.pulsesPerBeat
                 val clickFrames = PlaybackClock.OUTPUT_SAMPLE_RATE / 30
                 var countInFramePosition = 0L
-                var nextBeat = 0
+                var nextPulse = 0
 
                 while (countInFramePosition < totalCountInFrames && isActive && _isRunning.value) {
                     val framesToWrite = minOf(
@@ -258,18 +272,18 @@ class Mixer(
                     val output = FloatArray(framesToWrite * 2)
                     for (frame in 0 until framesToWrite) {
                         val absoluteFrame = countInFramePosition + frame
-                        if (nextBeat < countInBeats &&
-                            absoluteFrame >= (nextBeat * framesPerBeat).roundToLong()
+                        if (nextPulse < totalCountInPulses &&
+                            absoluteFrame >= (nextPulse * framesPerPulse).roundToLong()
                         ) {
-                            val clickAgeFrames = absoluteFrame - (nextBeat * framesPerBeat).roundToLong()
+                            val clickAgeFrames = absoluteFrame - (nextPulse * framesPerPulse).roundToLong()
                             if (clickAgeFrames < clickFrames) {
                                 output[frame * 2] = clickSample(clickAgeFrames)
                             }
-                            nextBeat++
+                            nextPulse++
                         } else {
-                            val lastBeatStart = ((nextBeat - 1).coerceAtLeast(0) * framesPerBeat).roundToLong()
-                            val clickAgeFrames = absoluteFrame - lastBeatStart
-                            if (nextBeat > 0 && clickAgeFrames in 0 until clickFrames.toLong()) {
+                            val lastPulseStart = ((nextPulse - 1).coerceAtLeast(0) * framesPerPulse).roundToLong()
+                            val clickAgeFrames = absoluteFrame - lastPulseStart
+                            if (nextPulse > 0 && clickAgeFrames in 0 until clickFrames.toLong()) {
                                 output[frame * 2] = clickSample(clickAgeFrames)
                             }
                         }
@@ -346,7 +360,7 @@ class Mixer(
 
                         val beatIncrement = currentBpm.coerceAtLeast(1).toDouble() /
                             (60.0 * PlaybackClock.OUTPUT_SAMPLE_RATE)
-                        metronomeBeatPhase += beatIncrement
+                        metronomeBeatPhase += beatIncrement * metronomeSubdivision.pulsesPerBeat
                         if (metronomeBeatPhase >= 1.0) {
                             metronomeBeatPhase -= 1.0
                             metronomeClickAgeFrames = if (metronomeEnabled) 0 else -1
@@ -486,7 +500,11 @@ class Mixer(
 
     private fun clickSample(ageFrames: Long): Float {
         val seconds = ageFrames.toDouble() / PlaybackClock.OUTPUT_SAMPLE_RATE
-        return (sin(2.0 * PI * 1_800.0 * seconds) * exp(-seconds * 90.0) * 0.45).toFloat()
+        return (
+            sin(2.0 * PI * 1_800.0 * seconds) *
+                exp(-seconds * 90.0) *
+                metronomeVolume
+            ).toFloat()
     }
 
     @Synchronized

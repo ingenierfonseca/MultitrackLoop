@@ -42,8 +42,8 @@
     <string name="app_settings_metronome_volume">Volumen del metrónomo</string>
     <string name="app_settings_metronome_volume_value">Volumen del metrónomo (%1$d%%)</string>
     <string name="app_settings_subdivision">Subdivisión: %1$s</string>
+    <string name="subdivision_quarter_note">♩ Negra</string>
     <string name="subdivision_eighth_note">♪ Corchea</string>
-    <string name="subdivision_sixteenth_note">♬ Semicorchea</string>
     <string name="cd_settings">Ajustes</string>
     <string name="loading">Cargando…</string>
     <string name="error_generic">Error</string>

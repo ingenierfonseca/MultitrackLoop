@@ -1,6 +1,8 @@
 package com.multitrack.player.presentation.screens.playback
 
 import androidx.lifecycle.ViewModelStore
+import com.multitrack.player.domain.model.AppSettings
+import com.multitrack.player.domain.model.MetronomeSubdivision
 import com.multitrack.player.domain.model.PlaybackSession
 import com.multitrack.player.domain.model.PlaybackState
 import com.multitrack.player.domain.repository.PlaybackEngine
@@ -104,6 +106,22 @@ class PlaybackViewModelTest {
         viewModel().onToggleMetronome()
 
         verify { control.setMetronomeEnabled(true) }
+    }
+
+    @Test
+    fun `app metronome settings are applied to engine controls`() {
+        viewModel().applyAppSettings(
+            AppSettings(
+                countInEnabled = true,
+                countInBeats = 3,
+                metronomeVolume = 0.7f,
+                metronomeSubdivision = MetronomeSubdivision.EIGHTH_NOTE
+            )
+        )
+
+        verify { control.setCountInSettings(true, 3) }
+        verify { control.setMetronomeVolume(0.7f) }
+        verify { control.setMetronomeSubdivision(MetronomeSubdivision.EIGHTH_NOTE) }
     }
 
     @Test
