@@ -13,6 +13,9 @@ class SavePlaybackProjectUseCase(
         require(project.bpm in PlaybackState.MIN_BPM..PlaybackState.MAX_BPM) {
             "Project BPM is outside the supported range"
         }
+        require(project.originalBpm in PlaybackState.MIN_BPM..PlaybackState.MAX_BPM) {
+            "Project original BPM is outside the supported range"
+        }
         require(destinationUri.isNotBlank()) { "Project destination is required" }
         repository.save(project, destinationUri)
     }

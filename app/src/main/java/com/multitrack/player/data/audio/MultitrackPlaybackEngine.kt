@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.roundToLong
 
 /**
  * Production implementation of [PlaybackEngine].
@@ -54,6 +55,7 @@ class MultitrackPlaybackEngine(
     }.stateIn(scope, SharingStarted.Eagerly, _state.value)
 
     private var preparedTracks: List<AudioTrack> = emptyList()
+    private var baseDurationMs: Long = 0L
 
     /** Tracks whether we are resuming from pause (true) or starting fresh (false). */
     @Volatile private var resume: Boolean = false
@@ -74,7 +76,21 @@ class MultitrackPlaybackEngine(
                     session.tracks.map { track -> decodeToSource(track) }
                 }
                 val durationMs = computeMixDurationMs(sources)
-                mixer.configure(sources, session.initialBpm, session.tracks.map { it.id })
+                baseDurationMs = durationMs
+                val originalBpm = session.originalBpm.coerceIn(
+                    PlaybackState.MIN_BPM,
+                    PlaybackState.MAX_BPM
+                )
+                val initialBpm = session.initialBpm.coerceIn(
+                    PlaybackState.MIN_BPM,
+                    PlaybackState.MAX_BPM
+                )
+                mixer.configure(
+                    sources = sources,
+                    currentBpm = initialBpm,
+                    originalBpm = originalBpm,
+                    trackIds = session.tracks.map { it.id }
+                )
                 mixer.setLoop(session.isLoopEnabled)
                 mixer.setMetronomeEnabled(session.isMetronomeEnabled)
                 val trackIds = session.tracks.map { it.id }.toSet()
@@ -83,8 +99,9 @@ class MultitrackPlaybackEngine(
                 _state.update { state ->
                     state.copy(
                         tracks = session.tracks,
-                        currentBpm = session.initialBpm,
-                        durationMs = durationMs,
+                        currentBpm = initialBpm,
+                        originalBpm = originalBpm,
+                        durationMs = durationAtBpm(originalBpm, initialBpm),
                         positionMs = 0L,
                         isPlaying = false,
                         isPaused = false,
@@ -184,7 +201,8 @@ class MultitrackPlaybackEngine(
     override fun setBpm(bpm: Int) {
         val clamped = bpm.coerceIn(PlaybackState.MIN_BPM, PlaybackState.MAX_BPM)
         mixer.setBpm(clamped)
-        _state.value = _state.value.copy(currentBpm = clamped)
+        val newDurationMs = durationAtBpm(_state.value.originalBpm, clamped)
+        _state.update { it.copy(currentBpm = clamped, durationMs = newDurationMs) }
     }
 
     override fun release() {
@@ -228,5 +246,12 @@ class MultitrackPlaybackEngine(
         if (sources.isEmpty()) return 0L
         val longestFrames = sources.maxOf { it.totalFramesAtBusRate }
         return longestFrames * 1000L / PlaybackClock.OUTPUT_SAMPLE_RATE
+    }
+
+    private fun durationAtBpm(originalBpm: Int, currentBpm: Int): Long {
+        if (baseDurationMs <= 0L) return 0L
+        return (baseDurationMs.toDouble() * originalBpm.coerceAtLeast(1) / currentBpm.coerceAtLeast(1))
+            .roundToLong()
+            .coerceAtLeast(0L)
     }
 }

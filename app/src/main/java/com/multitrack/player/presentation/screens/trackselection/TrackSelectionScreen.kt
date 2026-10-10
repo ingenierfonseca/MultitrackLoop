@@ -37,6 +37,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -273,4 +274,84 @@ private fun bpmErrorString(code: String?): String? = when (code) {
     "max" -> stringResource(R.string.error_max_bpm, PlaybackState.MAX_BPM)
     "invalid" -> stringResource(R.string.error_invalid_bpm)
     else -> null
+}
+
+@Preview
+@Composable
+fun TrackSelectionScreenPreview() {
+    Scaffold { padding ->
+        Surface(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding),
+            color = MaterialTheme.colorScheme.background
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 20.dp, vertical = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Text(
+                    text = stringResource(R.string.track_selection_title),
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+
+                AddTracksCard {
+                    //pickFiles.launch(arrayOf("audio/*"))
+                }
+
+                Text(
+                    text = stringResource(R.string.selected_tracks),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+
+                if (true) {
+                    /*TrackList(
+                        tracks = [],
+                        onRemove = { },
+                        modifier = Modifier.weight(1f, fill = false)
+                    )*/
+                } else {
+                    EmptyState()
+                }
+
+                Spacer(Modifier.weight(1f, fill = true))
+
+                TempoCard(
+                    bpmInput = "120",
+                    error = bpmErrorString("2"),
+                    onBpmChange = {}
+                )
+
+                val continueEnabled = true
+                Button(
+                    onClick = {},
+                    enabled = continueEnabled,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp)
+                        .semantics { testTag = "continue-button" },
+                    shape = RoundedCornerShape(16.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
+                    )
+                ) {
+                    Text(stringResource(R.string.continue_action), style = MaterialTheme.typography.titleMedium)
+                }
+
+                if (true) {
+                    Text(
+                        text = stringResource(R.string.error_no_tracks),
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+            }
+        }
+    }
 }

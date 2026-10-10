@@ -7,6 +7,7 @@ package com.multitrack.player.domain.model
 data class PlaybackSession(
     val tracks: List<AudioTrack>,
     val initialBpm: Int,
+    val originalBpm: Int = initialBpm,
     val isLoopEnabled: Boolean = true,
     val isMetronomeEnabled: Boolean = false,
     val mutedTrackIds: Set<String> = emptySet(),

@@ -12,6 +12,7 @@ private data class ProjectDocument(
     val version: Int = 1,
     val name: String,
     val bpm: Int,
+    val originalBpm: Int = bpm,
     val isLoopEnabled: Boolean,
     val isMetronomeEnabled: Boolean = false,
     val mutedTrackIds: List<String> = emptyList(),
@@ -40,6 +41,7 @@ object PlaybackProjectJsonCodec {
         ProjectDocument(
             name = project.name,
             bpm = project.bpm,
+            originalBpm = project.originalBpm,
             isLoopEnabled = project.isLoopEnabled,
             isMetronomeEnabled = project.isMetronomeEnabled,
             mutedTrackIds = project.mutedTrackIds.toList(),
@@ -65,6 +67,7 @@ object PlaybackProjectJsonCodec {
         return PlaybackProject(
             name = document.name,
             bpm = document.bpm,
+            originalBpm = document.originalBpm,
             isLoopEnabled = document.isLoopEnabled,
             isMetronomeEnabled = document.isMetronomeEnabled,
             mutedTrackIds = document.mutedTrackIds.toSet(),

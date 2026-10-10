@@ -60,6 +60,7 @@ class PlaybackViewModel @Inject constructor(
                     PlaybackSession(
                         tracks = current.tracks + track,
                         initialBpm = current.currentBpm,
+                        originalBpm = current.originalBpm,
                         isLoopEnabled = current.isLoopEnabled,
                         isMetronomeEnabled = current.isMetronomeEnabled,
                         mutedTrackIds = current.mutedTrackIds,
@@ -108,6 +109,7 @@ class PlaybackViewModel @Inject constructor(
                         name = projectName,
                         tracks = playback.tracks,
                         bpm = playback.currentBpm,
+                        originalBpm = playback.originalBpm,
                         isLoopEnabled = playback.isLoopEnabled,
                         isMetronomeEnabled = playback.isMetronomeEnabled,
                         mutedTrackIds = playback.mutedTrackIds,
@@ -150,6 +152,7 @@ class PlaybackViewModel @Inject constructor(
                         PlaybackSession(
                             tracks = project.tracks,
                             initialBpm = project.bpm,
+                            originalBpm = project.originalBpm,
                             isLoopEnabled = project.isLoopEnabled,
                             isMetronomeEnabled = project.isMetronomeEnabled,
                             mutedTrackIds = project.mutedTrackIds,

@@ -26,6 +26,7 @@ data class SerializableTrack(
 data class SerializableSession(
     val tracks: List<SerializableTrack>,
     val bpm: Int,
+    val originalBpm: Int = bpm,
     val isLoopEnabled: Boolean = true,
     val isMetronomeEnabled: Boolean = false,
     val mutedTrackIds: List<String> = emptyList(),
@@ -39,6 +40,7 @@ fun PlaybackSession.toSerializable(): SerializableSession =
             SerializableTrack(it.id, it.name, it.uri, it.durationMs, it.format.name)
         },
         bpm = initialBpm,
+        originalBpm = originalBpm,
         isLoopEnabled = isLoopEnabled,
         isMetronomeEnabled = isMetronomeEnabled,
         mutedTrackIds = mutedTrackIds.toList(),
@@ -58,6 +60,7 @@ fun SerializableSession.toDomain(): PlaybackSession =
             )
         },
         initialBpm = bpm,
+        originalBpm = originalBpm,
         isLoopEnabled = isLoopEnabled,
         isMetronomeEnabled = isMetronomeEnabled,
         mutedTrackIds = mutedTrackIds.toSet(),

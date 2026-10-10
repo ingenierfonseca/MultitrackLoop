@@ -81,7 +81,8 @@ class Mixer(
 
     fun configure(
         sources: List<PcmSource>,
-        initialBpm: Int,
+        currentBpm: Int,
+        originalBpm: Int,
         trackIds: List<String>
     ) {
         // If previously running, stop first
@@ -94,7 +95,8 @@ class Mixer(
             gains.add(1.0f)
         }
         _meterLevels.value = sourceIds.associateWith { TrackMeterLevel.Silent }
-        this.currentBpm = initialBpm
+        this.currentBpm = currentBpm
+        this.originalBpm = originalBpm.coerceAtLeast(1)
     }
 
     fun setBpm(bpm: Int) {
@@ -237,14 +239,14 @@ class Mixer(
 
                 updateTrackMeters(sourceRms, sourcePeaks, smoothedRms, heldPeaks, frameChunk)
 
-                if (anyActive && metronomeEnabled) {
+                if (anyActive) {
                     val framesPerBeat =
                         (PlaybackClock.OUTPUT_SAMPLE_RATE * 60L / currentBpm.coerceAtLeast(1))
                             .coerceAtLeast(1L)
                     val clickFrames = PlaybackClock.OUTPUT_SAMPLE_RATE / 30
                     for (frame in 0 until frameChunk) {
                         val frameInBeat = metronomeFramePosition % framesPerBeat
-                        if (frameInBeat < clickFrames) {
+                        if (metronomeEnabled && frameInBeat < clickFrames) {
                             val seconds = frameInBeat.toDouble() / PlaybackClock.OUTPUT_SAMPLE_RATE
                             val click = sin(2.0 * PI * 1_800.0 * seconds) * exp(-seconds * 90.0)
                             mixBuf[frame * 2] += (click * 0.45).toFloat()
