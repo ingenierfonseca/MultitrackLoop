@@ -270,13 +270,17 @@ class PlaybackViewModel @Inject constructor(
         control.setMetronomeEnabled(!current.isMetronomeEnabled)
     }
 
+    fun applyCountInSettings(enabled: Boolean, beats: Int) {
+        control.setCountInSettings(enabled, beats.coerceIn(1, 4))
+    }
+
     fun onIncreaseBpm() {
-        if (engine.state.value.isLoading) return
+        if (engine.state.value.isLoading || engine.state.value.isCountingIn) return
         control.increaseBpm(engine.state.value.currentBpm)
     }
 
     fun onDecreaseBpm() {
-        if (engine.state.value.isLoading) return
+        if (engine.state.value.isLoading || engine.state.value.isCountingIn) return
         control.decreaseBpm(engine.state.value.currentBpm)
     }
 

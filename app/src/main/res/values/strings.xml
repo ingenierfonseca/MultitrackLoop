@@ -35,6 +35,15 @@
     <string name="cd_toggle_loop">Cambiar loop</string>
     <string name="cd_toggle_metronome">Activar o desactivar metrónomo</string>
     <string name="cd_toggle_loop_adjustment">Ajustar loop a cuatro compases</string>
+    <string name="cd_toggle_count_in">Activar o desactivar count-in</string>
+    <string name="cd_app_settings">Ajustes de audio</string>
+    <string name="app_settings_count_in">Count-in (%1$d tiempos)</string>
+    <string name="count_in_beats_option">%1$d tiempos</string>
+    <string name="app_settings_metronome_volume">Volumen del metrónomo</string>
+    <string name="app_settings_metronome_volume_value">Volumen del metrónomo (%1$d%%)</string>
+    <string name="app_settings_subdivision">Subdivisión: %1$s</string>
+    <string name="subdivision_eighth_note">♪ Corchea</string>
+    <string name="subdivision_sixteenth_note">♬ Semicorchea</string>
     <string name="cd_settings">Ajustes</string>
     <string name="loading">Cargando…</string>
     <string name="error_generic">Error</string>

@@ -5,11 +5,14 @@ import android.content.Context
 import com.multitrack.player.data.audio.MultitrackPlaybackEngine
 import com.multitrack.player.data.datasource.ContentResolverDataSource
 import com.multitrack.player.data.repository.AudioTrackRepositoryImpl
+import com.multitrack.player.data.repository.AppSettingsRepositoryImpl
 import com.multitrack.player.data.repository.PlaybackProjectRepositoryImpl
 import com.multitrack.player.domain.repository.AudioTrackRepository
+import com.multitrack.player.domain.repository.AppSettingsRepository
 import com.multitrack.player.domain.repository.PlaybackEngine
 import com.multitrack.player.domain.repository.PlaybackProjectRepository
 import com.multitrack.player.domain.usecase.CreatePlaybackSessionUseCase
+import com.multitrack.player.domain.usecase.UpdateAppSettingsUseCase
 import com.multitrack.player.domain.usecase.LoadPlaybackProjectUseCase
 import com.multitrack.player.domain.usecase.PlaybackControlUseCase
 import com.multitrack.player.domain.usecase.ResolvePickedTrackUseCase
@@ -50,6 +53,12 @@ object AppModule {
 
     @Provides
     @Singleton
+    fun provideAppSettingsRepository(
+        @ApplicationContext context: Context
+    ): AppSettingsRepository = AppSettingsRepositoryImpl(context)
+
+    @Provides
+    @Singleton
     fun providePlaybackEngine(resolver: ContentResolver): PlaybackEngine =
         MultitrackPlaybackEngine(resolver)
 
@@ -58,6 +67,11 @@ object AppModule {
 
     @Provides
     fun provideCreateSessionUseCase(): CreatePlaybackSessionUseCase = CreatePlaybackSessionUseCase()
+
+    @Provides
+    fun provideUpdateAppSettingsUseCase(
+        repository: AppSettingsRepository
+    ): UpdateAppSettingsUseCase = UpdateAppSettingsUseCase(repository)
 
     @Provides
     fun provideResolvePickedTrackUseCase(repo: AudioTrackRepository): ResolvePickedTrackUseCase =

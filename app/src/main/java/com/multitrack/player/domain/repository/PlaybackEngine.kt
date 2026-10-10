@@ -33,6 +33,9 @@ interface PlaybackEngine {
     /** Enables/disables looping the whole mix. */
     fun setLoop(enabled: Boolean)
 
+    /** Configures the app-level count-in used when playback starts from zero. */
+    fun setCountInSettings(enabled: Boolean, beats: Int)
+
     /** Quantizes loop boundaries to four 4/4 bars. */
     fun setLoopQuantized(enabled: Boolean)
 

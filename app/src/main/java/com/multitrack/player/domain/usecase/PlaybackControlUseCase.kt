@@ -19,6 +19,7 @@ class PlaybackControlUseCase(
     fun stop() = engine.stop()
     fun seekToStart() = engine.seekToStart()
     fun setLoop(enabled: Boolean) = engine.setLoop(enabled)
+    fun setCountInSettings(enabled: Boolean, beats: Int) = engine.setCountInSettings(enabled, beats)
     fun setLoopQuantized(enabled: Boolean) = engine.setLoopQuantized(enabled)
     fun setTrackMuted(trackId: String, muted: Boolean) = engine.setTrackMuted(trackId, muted)
     fun setMetronomeEnabled(enabled: Boolean) = engine.setMetronomeEnabled(enabled)

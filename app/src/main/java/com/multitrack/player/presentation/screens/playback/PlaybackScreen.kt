@@ -74,6 +74,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.multitrack.player.R
 import com.multitrack.player.domain.model.AudioTrack
+import com.multitrack.player.domain.model.AppSettings
+import com.multitrack.player.domain.model.MetronomeSubdivision
 import com.multitrack.player.domain.model.PlaybackSession
 import com.multitrack.player.domain.model.TrackMeterLevel
 import com.multitrack.player.presentation.components.AppHeader
@@ -81,11 +83,13 @@ import com.multitrack.player.presentation.components.BpmControl
 import com.multitrack.player.presentation.components.PlaybackControls
 import com.multitrack.player.presentation.components.ProjectTempoDialog
 import com.multitrack.player.presentation.theme.LocalAppThemeColors
+import com.multitrack.player.presentation.settings.AppSettingsViewModel
 
 @Composable
 fun PlaybackScreen(
     session: PlaybackSession,
-    viewModel: PlaybackViewModel = hiltViewModel()
+    viewModel: PlaybackViewModel = hiltViewModel(),
+    appSettingsViewModel: AppSettingsViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
     val activity = context as? ComponentActivity
@@ -144,6 +148,24 @@ fun PlaybackScreen(
 
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val projectState by viewModel.projectUiState.collectAsStateWithLifecycle()
+    val appSettingsState by appSettingsViewModel.uiState.collectAsStateWithLifecycle()
+    var countInSettingsApplied by remember { mutableStateOf(false) }
+
+    LaunchedEffect(
+        appSettingsState.isLoaded,
+        appSettingsState.settings.countInEnabled,
+        appSettingsState.settings.countInBeats
+    ) {
+        if (appSettingsState.isLoaded) {
+            viewModel.applyCountInSettings(
+                appSettingsState.settings.countInEnabled,
+                appSettingsState.settings.countInBeats
+            )
+            countInSettingsApplied = true
+        } else {
+            countInSettingsApplied = false
+        }
+    }
 
     Scaffold { padding ->
         Surface(
@@ -160,6 +182,8 @@ fun PlaybackScreen(
                         state = s,
                         vm = viewModel,
                         projectState = projectState,
+                        appSettings = appSettingsState.settings,
+                        countInSettingsReady = countInSettingsApplied,
                         onAddTrack = { audioPicker.launch(arrayOf("audio/*")) },
                         onSaveProjectAs = {
                             projectNameInput = projectState.projectName.orEmpty()
@@ -167,6 +191,20 @@ fun PlaybackScreen(
                         },
                         onSaveProject = viewModel::saveProject,
                         onLoadProject = { projectPicker.launch(arrayOf("*/*")) },
+                        onToggleCountIn = {
+                            val enabled = !appSettingsState.settings.countInEnabled
+                            appSettingsViewModel.setCountInEnabled(enabled)
+                            viewModel.applyCountInSettings(enabled, appSettingsState.settings.countInBeats)
+                        },
+                        onCountInBeatsChange = { beats ->
+                            appSettingsViewModel.setCountInBeats(beats)
+                            viewModel.applyCountInSettings(
+                                appSettingsState.settings.countInEnabled,
+                                beats
+                            )
+                        },
+                        onMetronomeVolumeChange = appSettingsViewModel::setMetronomeVolume,
+                        onMetronomeSubdivisionChange = appSettingsViewModel::setMetronomeSubdivision,
                         onNewProject = { showNewProjectWarning = true },
                         onToggleLoopQuantization = {
                             if (s.isLoopQuantized) {
@@ -185,8 +223,10 @@ fun PlaybackScreen(
                             }
                         }
                     )
-                    if (s.isLoading || projectState.isBusy) {
-                        ProjectOperationOverlay(projectState.operation)
+                    if (s.isLoading || projectState.isBusy || !countInSettingsApplied) {
+                        ProjectOperationOverlay(
+                            if (projectState.isBusy) projectState.operation else null
+                        )
                     }
                 }
             }
@@ -411,7 +451,13 @@ private fun ReadyView(
     state: PlaybackUiState.Ready,
     vm: PlaybackViewModel,
     projectState: PlaybackProjectUiState,
+    appSettings: AppSettings,
+    countInSettingsReady: Boolean,
     onAddTrack: () -> Unit,
+    onToggleCountIn: () -> Unit,
+    onCountInBeatsChange: (Int) -> Unit,
+    onMetronomeVolumeChange: (Float) -> Unit,
+    onMetronomeSubdivisionChange: (MetronomeSubdivision) -> Unit,
     onSaveProjectAs: () -> Unit,
     onSaveProject: () -> Unit,
     onLoadProject: () -> Unit,
@@ -428,12 +474,20 @@ private fun ReadyView(
     ) {
         AppHeader(
             isPlaying = state.isPlaying,
-            isBusy = state.isLoading || projectState.isBusy,
+            isBusy = state.isLoading || projectState.isBusy || !countInSettingsReady,
             canSaveProject = projectState.canSave,
             isMetronomeEnabled = state.isMetronomeEnabled,
+            countInEnabled = appSettings.countInEnabled,
+            countInBeats = appSettings.countInBeats,
+            metronomeVolume = appSettings.metronomeVolume,
+            metronomeSubdivision = appSettings.metronomeSubdivision,
             isLoopQuantized = state.isLoopQuantized,
             onAddTrack = onAddTrack,
             onToggleMetronome = vm::onToggleMetronome,
+            onToggleCountIn = onToggleCountIn,
+            onCountInBeatsChange = onCountInBeatsChange,
+            onMetronomeVolumeChange = onMetronomeVolumeChange,
+            onMetronomeSubdivisionChange = onMetronomeSubdivisionChange,
             onToggleLoopQuantization = onToggleLoopQuantization,
             onSaveProjectAs = onSaveProjectAs,
             onSaveProject = onSaveProject,
@@ -484,7 +538,7 @@ private fun ReadyView(
             isPlaying = state.isPlaying,
             durationMs = state.durationMs,
             positionMs = state.positionMs,
-            onPlay = vm::onPlayPause,
+            onPlay = { if (countInSettingsReady) vm.onPlayPause() },
             onPause = vm::onPlayPause,
             onStop = vm::onStop,
             onRestart = vm::onRestart,
@@ -807,9 +861,17 @@ fun PlaybackScreenPreview() {
                     isBusy = false,
                     canSaveProject = false,
                     isMetronomeEnabled = isMetronomeEnabled.value,
+                    countInEnabled = false,
+                    countInBeats = 4,
+                    metronomeVolume = 0.45f,
+                    metronomeSubdivision = MetronomeSubdivision.EIGHTH_NOTE,
                     isLoopQuantized = isLoopQuantized.value,
                     onAddTrack = {},
                     onToggleMetronome = { isMetronomeEnabled.value = !isMetronomeEnabled.value },
+                    onToggleCountIn = {},
+                    onCountInBeatsChange = {},
+                    onMetronomeVolumeChange = {},
+                    onMetronomeSubdivisionChange = {},
                     onToggleLoopQuantization = { isLoopQuantized.value = !isLoopQuantized.value },
                     onSaveProjectAs = {},
                     onSaveProject = {},

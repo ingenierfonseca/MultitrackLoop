@@ -42,16 +42,20 @@ class MultitrackPlaybackEngine(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private val clock = PlaybackClock()
-    private val mixer = Mixer(clock, ::onEngineError, ::onPlaybackCompleted)
+    private val mixer = Mixer(clock, ::onEngineError, ::onPlaybackCompleted, ::onCountInCompleted)
 
     private val _state = MutableStateFlow(
         PlaybackState(tracks = emptyList(), isLoading = true)
     )
 
     override val state: StateFlow<PlaybackState> = combine(
-        _state, clock.state, mixer.meterLevels
-    ) { st, clk, meterLevels ->
-        st.copy(positionMs = clk.positionMs, trackMeterLevels = meterLevels)
+        _state, clock.state, mixer.meterLevels, mixer.isCountingIn
+    ) { st, clk, meterLevels, isCountingIn ->
+        st.copy(
+            positionMs = clk.positionMs,
+            isCountingIn = isCountingIn,
+            trackMeterLevels = meterLevels
+        )
     }.stateIn(scope, SharingStarted.Eagerly, _state.value)
 
     private var preparedTracks: List<AudioTrack> = emptyList()
@@ -60,6 +64,8 @@ class MultitrackPlaybackEngine(
 
     /** Tracks whether we are resuming from pause (true) or starting fresh (false). */
     @Volatile private var resume: Boolean = false
+    @Volatile private var countInEnabled: Boolean = false
+    @Volatile private var countInBeats: Int = 4
 
     override suspend fun prepare(session: PlaybackSession): Result<Unit> {
         // Stop anything in flight and free previous sources
@@ -158,22 +164,36 @@ class MultitrackPlaybackEngine(
         if (!resume) {
             mixer.softResetForRestart()
         }
-        mixer.start()
-        resume = true
-        _state.value = _state.value.copy(isPlaying = true, isPaused = false, error = null)
+        val countInForThisStart = if (!resume && countInEnabled) countInBeats else 0
+        mixer.start(countInForThisStart)
+        resume = countInForThisStart == 0
+        _state.update {
+            it.copy(
+                isPlaying = true,
+                isPaused = false,
+                isCountingIn = countInForThisStart > 0,
+                error = null
+            )
+        }
     }
 
     override fun pause() {
+        if (_state.value.isCountingIn) resume = false
         mixer.stop()
         // Position is preserved; next play() resumes from where we were.
-        _state.value = _state.value.copy(isPlaying = false, isPaused = true)
+        _state.value = _state.value.copy(isPlaying = false, isPaused = true, isCountingIn = false)
     }
 
     override fun stop() {
         mixer.stop()
         mixer.reset()
         resume = false
-        _state.value = _state.value.copy(isPlaying = false, isPaused = false, positionMs = 0L)
+        _state.value = _state.value.copy(
+            isPlaying = false,
+            isPaused = false,
+            isCountingIn = false,
+            positionMs = 0L
+        )
     }
 
     override fun seekToStart() {
@@ -196,6 +216,11 @@ class MultitrackPlaybackEngine(
                 )
             )
         }
+    }
+
+    override fun setCountInSettings(enabled: Boolean, beats: Int) {
+        countInEnabled = enabled
+        countInBeats = beats.coerceIn(1, 4)
     }
 
     override fun setLoopQuantized(enabled: Boolean) {
@@ -290,6 +315,11 @@ class MultitrackPlaybackEngine(
                 positionMs = durationMs
             )
         }
+    }
+
+    private fun onCountInCompleted() {
+        resume = true
+        _state.update { it.copy(isCountingIn = false) }
     }
 
     private fun applyTrackGains(state: PlaybackState) {

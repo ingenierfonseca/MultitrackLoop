@@ -8,6 +8,7 @@ import com.multitrack.player.data.audio.source.PcmSource
 import com.multitrack.player.domain.model.AudioError
 import com.multitrack.player.domain.model.TrackMeterLevel
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -26,6 +27,7 @@ import kotlin.math.max
 import kotlin.math.sqrt
 import kotlin.math.sin
 import kotlin.math.tanh
+import kotlin.math.roundToLong
 
 /**
  * Single-producer, single-consumer audio mixer.
@@ -51,7 +53,8 @@ import kotlin.math.tanh
 class Mixer(
     private val clock: PlaybackClock,
     private val errorSink: (AudioError) -> Unit,
-    private val onPlaybackCompleted: () -> Unit = {}
+    private val onPlaybackCompleted: () -> Unit = {},
+    private val onCountInCompleted: () -> Unit = {}
 ) {
 
     private companion object {
@@ -65,6 +68,8 @@ class Mixer(
 
     private val _isRunning = MutableStateFlow(false)
     val isRunning: StateFlow<Boolean> = _isRunning.asStateFlow()
+    private val _isCountingIn = MutableStateFlow(false)
+    val isCountingIn: StateFlow<Boolean> = _isCountingIn.asStateFlow()
 
     /** "prepared" sources are kept in a swap-friendly list. */
     private val sources = mutableListOf<PcmSource>()
@@ -135,7 +140,7 @@ class Mixer(
         if (index in gains.indices) gains[index] = gain
     }
 
-    fun start() {
+    fun start(countInBeats: Int = 0) {
         if (_isRunning.value) return
         if (sources.isEmpty()) {
             errorSink(AudioError.PlaybackError("No hay pistas"))
@@ -172,9 +177,10 @@ class Mixer(
 
             clock.start()
             _isRunning.value = true
+            _isCountingIn.value = countInBeats > 0
             outputTrack.play()
 
-            job = scope.launch { runMixerLoop(outputTrack) }
+            job = scope.launch { runMixerLoop(outputTrack, countInBeats.coerceIn(0, 4)) }
         } catch (t: Throwable) {
             errorSink(AudioError.PlaybackError(t.message))
             _isRunning.value = false
@@ -183,6 +189,7 @@ class Mixer(
 
     fun stop() {
         _isRunning.value = false
+        _isCountingIn.value = false
         job?.cancel()
         job = null
         releaseAudioTrack()
@@ -213,7 +220,8 @@ class Mixer(
         clock.reset()
     }
 
-    private suspend fun runMixerLoop(outputTrack: AudioTrack) = withContext(Dispatchers.Default) {
+    private suspend fun runMixerLoop(outputTrack: AudioTrack, countInBeats: Int) =
+        withContext(Dispatchers.Default) {
         val frameChunk = 1024 // ~23 ms @ 44.1 kHz; good trade-off latency / overhead
         val mixBuf = FloatArray(frameChunk * 2)
         val chunkBuf = FloatArray(frameChunk * 2)
@@ -233,6 +241,62 @@ class Mixer(
         }
 
         try {
+            if (countInBeats > 0) {
+                val bpmAtCountInStart = currentBpm.coerceAtLeast(1)
+                val framesPerBeat = PlaybackClock.OUTPUT_SAMPLE_RATE * 60.0 / bpmAtCountInStart
+                val totalCountInFrames = (framesPerBeat * countInBeats).roundToLong()
+                    .coerceAtLeast(1L)
+                val clickFrames = PlaybackClock.OUTPUT_SAMPLE_RATE / 30
+                var countInFramePosition = 0L
+                var nextBeat = 0
+
+                while (countInFramePosition < totalCountInFrames && isActive && _isRunning.value) {
+                    val framesToWrite = minOf(
+                        frameChunk.toLong(),
+                        totalCountInFrames - countInFramePosition
+                    ).toInt()
+                    val output = FloatArray(framesToWrite * 2)
+                    for (frame in 0 until framesToWrite) {
+                        val absoluteFrame = countInFramePosition + frame
+                        if (nextBeat < countInBeats &&
+                            absoluteFrame >= (nextBeat * framesPerBeat).roundToLong()
+                        ) {
+                            val clickAgeFrames = absoluteFrame - (nextBeat * framesPerBeat).roundToLong()
+                            if (clickAgeFrames < clickFrames) {
+                                output[frame * 2] = clickSample(clickAgeFrames)
+                            }
+                            nextBeat++
+                        } else {
+                            val lastBeatStart = ((nextBeat - 1).coerceAtLeast(0) * framesPerBeat).roundToLong()
+                            val clickAgeFrames = absoluteFrame - lastBeatStart
+                            if (nextBeat > 0 && clickAgeFrames in 0 until clickFrames.toLong()) {
+                                output[frame * 2] = clickSample(clickAgeFrames)
+                            }
+                        }
+                    }
+                    val written = outputTrack.write(
+                        output,
+                        0,
+                        output.size,
+                        AudioTrack.WRITE_BLOCKING
+                    )
+                    if (written <= 0) {
+                        errorSink(AudioError.PlaybackError("No se pudo reproducir el count-in"))
+                        _isRunning.value = false
+                        break
+                    }
+                    countInFramePosition += written / 2
+                }
+
+                _isCountingIn.value = false
+                if (_isRunning.value && countInFramePosition >= totalCountInFrames) {
+                    clock.reset()
+                    metronomeBeatPhase = 0.0
+                    metronomeClickAgeFrames = if (metronomeEnabled) 0 else -1
+                    onCountInCompleted()
+                }
+            }
+
             while (isActive && _isRunning.value) {
                 // Clear mix bus
                 for (i in mixBuf.indices) mixBuf[i] = 0f
@@ -275,10 +339,7 @@ class Mixer(
                         if (!metronomeEnabled) {
                             metronomeClickAgeFrames = -1
                         } else if (metronomeClickAgeFrames in 0 until clickFrames) {
-                            val seconds = metronomeClickAgeFrames.toDouble() /
-                                PlaybackClock.OUTPUT_SAMPLE_RATE
-                            val click = sin(2.0 * PI * 1_800.0 * seconds) * exp(-seconds * 90.0)
-                            mixBuf[frame * 2] += (click * 0.45).toFloat()
+                            mixBuf[frame * 2] += clickSample(metronomeClickAgeFrames.toLong())
                             metronomeClickAgeFrames++
                             if (metronomeClickAgeFrames >= clickFrames) metronomeClickAgeFrames = -1
                         }
@@ -371,10 +432,12 @@ class Mixer(
                 }
             }
         } catch (t: Throwable) {
+            if (t is CancellationException) throw t
             errorSink(AudioError.PlaybackError(t.message))
             _isRunning.value = false
         } finally {
             if (!_isRunning.value) {
+                _isCountingIn.value = false
                 releaseAudioTrack(outputTrack)
                 clock.stop()
                 _meterLevels.value = sourceIds.associateWith { TrackMeterLevel.Silent }
@@ -419,6 +482,11 @@ class Mixer(
         if (amplitude <= 0f) return 0f
         val decibels = 20f * log10(amplitude)
         return ((decibels + 60f) / 60f).coerceIn(0f, 1f)
+    }
+
+    private fun clickSample(ageFrames: Long): Float {
+        val seconds = ageFrames.toDouble() / PlaybackClock.OUTPUT_SAMPLE_RATE
+        return (sin(2.0 * PI * 1_800.0 * seconds) * exp(-seconds * 90.0) * 0.45).toFloat()
     }
 
     @Synchronized

@@ -7,6 +7,7 @@ package com.multitrack.player.domain.model
 data class PlaybackState(
     val isPlaying: Boolean = false,
     val isPaused: Boolean = false,
+    val isCountingIn: Boolean = false,
     val isLoopEnabled: Boolean = true,
     val isLoopQuantized: Boolean = false,
     val isMetronomeEnabled: Boolean = false,

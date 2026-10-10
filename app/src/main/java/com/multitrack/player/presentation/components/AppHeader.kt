@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -13,14 +14,19 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -39,7 +45,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.multitrack.player.R
+import com.multitrack.player.domain.model.MetronomeSubdivision
 import com.multitrack.player.presentation.theme.LocalAppThemeColors
+import kotlin.math.roundToInt
 
 @Composable
 fun AppHeader(
@@ -47,9 +55,17 @@ fun AppHeader(
     isBusy: Boolean,
     canSaveProject: Boolean,
     isMetronomeEnabled: Boolean,
+    countInEnabled: Boolean,
+    countInBeats: Int,
+    metronomeVolume: Float,
+    metronomeSubdivision: MetronomeSubdivision,
     isLoopQuantized: Boolean,
     onAddTrack: () -> Unit,
     onToggleMetronome: () -> Unit,
+    onToggleCountIn: () -> Unit,
+    onCountInBeatsChange: (Int) -> Unit,
+    onMetronomeVolumeChange: (Float) -> Unit,
+    onMetronomeSubdivisionChange: (MetronomeSubdivision) -> Unit,
     onToggleLoopQuantization: () -> Unit,
     onNewProject: () -> Unit,
     onSaveProjectAs: () -> Unit,
@@ -58,6 +74,12 @@ fun AppHeader(
 ) {
     val appColors = LocalAppThemeColors.current
     var menuExpanded by remember { mutableStateOf(false) }
+    var settingsMenuExpanded by remember { mutableStateOf(false) }
+    var countInMenuExpanded by remember { mutableStateOf(false) }
+    var subdivisionMenuExpanded by remember { mutableStateOf(false) }
+    var metronomeVolumeDraft by remember(metronomeVolume) {
+        mutableFloatStateOf(metronomeVolume.coerceIn(0f, 1f))
+    }
 
     Row(
         modifier = Modifier
@@ -103,12 +125,112 @@ fun AppHeader(
             onClick = onToggleMetronome
         )
         HeaderIcon(
+            icon = Icons.Default.Timer,
+            contentDescriptionRes = R.string.cd_toggle_count_in,
+            tint = if (countInEnabled) appColors.accent else appColors.mutedText,
+            enabled = !isBusy,
+            onClick = onToggleCountIn
+        )
+        HeaderIcon(
             icon = Icons.Default.Tune,
             contentDescriptionRes = R.string.cd_toggle_loop_adjustment,
             tint = if (isLoopQuantized) appColors.accent else appColors.mutedText,
             enabled = !isBusy,
             onClick = onToggleLoopQuantization
         )
+        androidx.compose.foundation.layout.Box {
+            HeaderIcon(
+                icon = Icons.Default.Settings,
+                contentDescriptionRes = R.string.cd_app_settings,
+                enabled = !isBusy,
+                onClick = { settingsMenuExpanded = true }
+            )
+            DropdownMenu(
+                expanded = settingsMenuExpanded,
+                onDismissRequest = {
+                    settingsMenuExpanded = false
+                    countInMenuExpanded = false
+                    subdivisionMenuExpanded = false
+                }
+            ) {
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            stringResource(
+                                R.string.app_settings_count_in,
+                                countInBeats
+                            )
+                        )
+                    },
+                    onClick = { countInMenuExpanded = !countInMenuExpanded }
+                )
+                if (countInMenuExpanded) {
+                    (1..4).forEach { beats ->
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    text = stringResource(R.string.count_in_beats_option, beats),
+                                    modifier = Modifier.padding(start = 16.dp)
+                                )
+                            },
+                            onClick = {
+                                onCountInBeatsChange(beats)
+                                countInMenuExpanded = false
+                            }
+                        )
+                    }
+                }
+                DropdownMenuItem(
+                    text = {
+                        Column(modifier = Modifier.width(220.dp)) {
+                            Text(
+                                text = stringResource(
+                                    R.string.app_settings_metronome_volume_value,
+                                    (metronomeVolumeDraft * 100f).roundToInt()
+                                ),
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Slider(
+                                value = metronomeVolumeDraft,
+                                onValueChange = { metronomeVolumeDraft = it },
+                                onValueChangeFinished = {
+                                    onMetronomeVolumeChange(metronomeVolumeDraft)
+                                },
+                                enabled = !isBusy
+                            )
+                        }
+                    },
+                    onClick = {}
+                )
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            stringResource(
+                                R.string.app_settings_subdivision,
+                                subdivisionLabel(metronomeSubdivision)
+                            )
+                        )
+                    },
+                    onClick = { subdivisionMenuExpanded = !subdivisionMenuExpanded }
+                )
+                if (subdivisionMenuExpanded) {
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.subdivision_eighth_note)) },
+                        onClick = {
+                            onMetronomeSubdivisionChange(MetronomeSubdivision.EIGHTH_NOTE)
+                            subdivisionMenuExpanded = false
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.subdivision_sixteenth_note)) },
+                        onClick = {
+                            onMetronomeSubdivisionChange(MetronomeSubdivision.SIXTEENTH_NOTE)
+                            subdivisionMenuExpanded = false
+                        }
+                    )
+                }
+            }
+        }
         androidx.compose.foundation.layout.Box {
             HeaderIcon(
                 icon = Icons.Default.Menu,
@@ -155,6 +277,14 @@ fun AppHeader(
         }
     }
 }
+
+@Composable
+private fun subdivisionLabel(subdivision: MetronomeSubdivision): String = stringResource(
+    when (subdivision) {
+        MetronomeSubdivision.EIGHTH_NOTE -> R.string.subdivision_eighth_note
+        MetronomeSubdivision.SIXTEENTH_NOTE -> R.string.subdivision_sixteenth_note
+    }
+)
 
 @Composable
 private fun MetronomeHeaderIcon(
