@@ -3,6 +3,7 @@ package com.multitrack.player.presentation.screens.playback
 import com.multitrack.player.domain.model.AudioError
 import com.multitrack.player.domain.model.AudioTrack
 import com.multitrack.player.domain.model.PlaybackState
+import com.multitrack.player.domain.model.TrackMeterLevel
 
 sealed interface PlaybackUiState {
     data object Loading : PlaybackUiState
@@ -19,6 +20,7 @@ sealed interface PlaybackUiState {
         val mutedTrackIds: Set<String> = emptySet(),
         val soloTrackIds: Set<String> = emptySet(),
         val trackVolumes: Map<String, Float> = emptyMap(),
+        val trackMeterLevels: Map<String, TrackMeterLevel> = emptyMap(),
         val error: AudioError?
     ) : PlaybackUiState
 
@@ -41,6 +43,7 @@ internal fun PlaybackState.toUi(): PlaybackUiState = if (error != null && tracks
         mutedTrackIds = mutedTrackIds,
         soloTrackIds = soloTrackIds,
         trackVolumes = trackVolumes,
+        trackMeterLevels = trackMeterLevels,
         error = error
     )
 }

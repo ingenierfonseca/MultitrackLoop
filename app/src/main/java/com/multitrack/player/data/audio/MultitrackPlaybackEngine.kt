@@ -48,9 +48,9 @@ class MultitrackPlaybackEngine(
     )
 
     override val state: StateFlow<PlaybackState> = combine(
-        _state, clock.state
-    ) { st, clk ->
-        st.copy(positionMs = clk.positionMs)
+        _state, clock.state, mixer.meterLevels
+    ) { st, clk, meterLevels ->
+        st.copy(positionMs = clk.positionMs, trackMeterLevels = meterLevels)
     }.stateIn(scope, SharingStarted.Eagerly, _state.value)
 
     private var preparedTracks: List<AudioTrack> = emptyList()
@@ -74,7 +74,7 @@ class MultitrackPlaybackEngine(
                     session.tracks.map { track -> decodeToSource(track) }
                 }
                 val durationMs = computeMixDurationMs(sources)
-                mixer.configure(sources, session.initialBpm)
+                mixer.configure(sources, session.initialBpm, session.tracks.map { it.id })
                 mixer.setLoop(session.isLoopEnabled)
                 mixer.setMetronomeEnabled(session.isMetronomeEnabled)
                 val trackIds = session.tracks.map { it.id }.toSet()

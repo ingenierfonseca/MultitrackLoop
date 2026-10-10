@@ -6,6 +6,7 @@ import android.media.AudioManager
 import android.media.AudioTrack
 import com.multitrack.player.data.audio.source.PcmSource
 import com.multitrack.player.domain.model.AudioError
+import com.multitrack.player.domain.model.TrackMeterLevel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -17,8 +18,12 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.concurrent.CopyOnWriteArrayList
+import kotlin.math.abs
 import kotlin.math.PI
 import kotlin.math.exp
+import kotlin.math.log10
+import kotlin.math.max
+import kotlin.math.sqrt
 import kotlin.math.sin
 import kotlin.math.tanh
 
@@ -57,9 +62,12 @@ class Mixer(
 
     /** "prepared" sources are kept in a swap-friendly list. */
     private val sources = mutableListOf<PcmSource>()
+    private var sourceIds: List<String> = emptyList()
 
     /** Per-source gain in linear units. Default 1.0. */
     private val gains = CopyOnWriteArrayList<Float>()
+    private val _meterLevels = MutableStateFlow<Map<String, TrackMeterLevel>>(emptyMap())
+    val meterLevels: StateFlow<Map<String, TrackMeterLevel>> = _meterLevels.asStateFlow()
 
     /** Currently selected BPM. Used to communicate speed factor to sources. */
     @Volatile private var currentBpm: Int = 120
@@ -73,14 +81,19 @@ class Mixer(
 
     fun configure(
         sources: List<PcmSource>,
-        initialBpm: Int
+        initialBpm: Int,
+        trackIds: List<String>
     ) {
         // If previously running, stop first
         stop()
         this.sources.clear()
+        this.sourceIds = trackIds.take(sources.size)
         this.gains.clear()
         this.sources.addAll(sources)
-        repeat(sources.size) { gains.add(1.0f) }
+        repeat(sources.size) {
+            gains.add(1.0f)
+        }
+        _meterLevels.value = sourceIds.associateWith { TrackMeterLevel.Silent }
         this.currentBpm = initialBpm
     }
 
@@ -157,6 +170,7 @@ class Mixer(
         audioTrack?.release()
         audioTrack = null
         clock.stop()
+        _meterLevels.value = sourceIds.associateWith { TrackMeterLevel.Silent }
     }
 
     fun reset() {
@@ -169,7 +183,9 @@ class Mixer(
         stop()
         for (s in sources) s.release()
         sources.clear()
+        sourceIds = emptyList()
         gains.clear()
+        _meterLevels.value = emptyMap()
     }
 
     /** Called by the engine when the ViewModel asks for a fresh play after stop. */
@@ -182,6 +198,10 @@ class Mixer(
         val frameChunk = 1024 // ~23 ms @ 44.1 kHz; good trade-off latency / overhead
         val mixBuf = FloatArray(frameChunk * 2)
         val chunkBuf = FloatArray(frameChunk * 2)
+        val sourceRms = FloatArray(sources.size)
+        val sourcePeaks = FloatArray(sources.size)
+        val smoothedRms = FloatArray(sources.size)
+        val heldPeaks = FloatArray(sources.size)
         var metronomeFramePosition = 0L
         var lastPublishNanos = System.nanoTime()
 
@@ -189,6 +209,8 @@ class Mixer(
             while (isActive && _isRunning.value) {
                 // Clear mix bus
                 for (i in mixBuf.indices) mixBuf[i] = 0f
+                sourceRms.fill(0f)
+                sourcePeaks.fill(0f)
 
                 var anyActive = false
 
@@ -199,12 +221,21 @@ class Mixer(
                         val g = gains[idx]
                         var i = 0
                         val end = written * 2
+                        var energy = 0.0
+                        var peak = 0f
                         while (i < end) {
-                            mixBuf[i] += chunkBuf[i] * g
+                            val sample = chunkBuf[i] * g
+                            mixBuf[i] += sample
+                            energy += sample * sample
+                            peak = max(peak, abs(sample))
                             i++
                         }
+                        sourceRms[idx] = sqrt(energy / end.coerceAtLeast(1)).toFloat()
+                        sourcePeaks[idx] = peak
                     }
                 }
+
+                updateTrackMeters(sourceRms, sourcePeaks, smoothedRms, heldPeaks, frameChunk)
 
                 if (anyActive && metronomeEnabled) {
                     val framesPerBeat =
@@ -255,6 +286,11 @@ class Mixer(
                 val now = System.nanoTime()
                 if (now - lastPublishNanos > 33_000_000L) {
                     clock.publish()
+                    _meterLevels.value = sourceIds.mapIndexedNotNull { index, id ->
+                        if (index in smoothedRms.indices && index in heldPeaks.indices) {
+                            id to TrackMeterLevel(smoothedRms[index], heldPeaks[index])
+                        } else null
+                    }.toMap()
                     lastPublishNanos = now
                 }
             }
@@ -269,5 +305,35 @@ class Mixer(
     private fun softClip(sample: Float): Float {
         // Drive slightly so we still get full volume but no hard clipping.
         return tanh(sample.toDouble()).toFloat()
+    }
+
+    private fun updateTrackMeters(
+        rmsValues: FloatArray,
+        peakValues: FloatArray,
+        smoothedRms: FloatArray,
+        heldPeaks: FloatArray,
+        frames: Int
+    ) {
+        val elapsedSeconds = frames.toFloat() / PlaybackClock.OUTPUT_SAMPLE_RATE
+        for (index in smoothedRms.indices) {
+            val targetRms = amplitudeToMeterLevel(rmsValues.getOrElse(index) { 0f })
+            val previousRms = smoothedRms[index]
+            val timeConstant = if (targetRms > previousRms) 0.035f else 0.28f
+            val alpha = 1f - exp(-elapsedSeconds / timeConstant)
+            smoothedRms[index] = previousRms + (targetRms - previousRms) * alpha
+
+            val targetPeak = amplitudeToMeterLevel(peakValues.getOrElse(index) { 0f })
+            heldPeaks[index] = if (targetPeak >= heldPeaks[index]) {
+                targetPeak
+            } else {
+                max(targetPeak, heldPeaks[index] - elapsedSeconds / 1.2f)
+            }
+        }
+    }
+
+    private fun amplitudeToMeterLevel(amplitude: Float): Float {
+        if (amplitude <= 0f) return 0f
+        val decibels = 20f * log10(amplitude)
+        return ((decibels + 60f) / 60f).coerceIn(0f, 1f)
     }
 }

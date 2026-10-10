@@ -12,6 +12,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -36,6 +37,9 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
@@ -47,6 +51,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -68,6 +75,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.multitrack.player.R
 import com.multitrack.player.domain.model.AudioTrack
 import com.multitrack.player.domain.model.PlaybackSession
+import com.multitrack.player.domain.model.TrackMeterLevel
 import com.multitrack.player.presentation.components.AppHeader
 import com.multitrack.player.presentation.components.BpmControl
 import com.multitrack.player.presentation.components.PlaybackControls
@@ -318,6 +326,7 @@ private fun ReadyView(
                 mutedTrackIds = state.mutedTrackIds,
                 soloTrackIds = state.soloTrackIds,
                 trackVolumes = state.trackVolumes,
+                trackMeterLevels = state.trackMeterLevels,
                 onToggleMute = vm::onToggleTrackMute,
                 onToggleSolo = vm::onToggleTrackSolo,
                 onVolumeChange = vm::onTrackVolumeChanged
@@ -389,6 +398,7 @@ private fun TrackList(
     mutedTrackIds: Set<String> = emptySet(),
     soloTrackIds: Set<String> = emptySet(),
     trackVolumes: Map<String, Float> = emptyMap(),
+    trackMeterLevels: Map<String, TrackMeterLevel> = emptyMap(),
     onToggleMute: (String) -> Unit = {},
     onToggleSolo: (String) -> Unit = {},
     onVolumeChange: (String, Float) -> Unit = { _, _ -> }
@@ -403,6 +413,7 @@ private fun TrackList(
                 isMuted = track.id in mutedTrackIds,
                 isSolo = track.id in soloTrackIds,
                 volume = trackVolumes[track.id] ?: 1f,
+                meterLevel = trackMeterLevels[track.id] ?: TrackMeterLevel.Silent,
                 onToggleMute = { onToggleMute(track.id) },
                 onToggleSolo = { onToggleSolo(track.id) },
                 onVolumeChange = { onVolumeChange(track.id, it) }
@@ -416,6 +427,7 @@ private fun TrackRow(
     isMuted: Boolean,
     isSolo: Boolean,
     volume: Float,
+    meterLevel: TrackMeterLevel,
     onToggleMute: () -> Unit,
     onToggleSolo: () -> Unit,
     onVolumeChange: (Float) -> Unit
@@ -434,7 +446,7 @@ private fun TrackRow(
         horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         VerticalLevelMeter(
-            level = 100f,
+            level = meterLevel,
             modifier = Modifier
                 .width(6.dp)
                 .fillMaxHeight()
@@ -535,22 +547,58 @@ private fun TrackRow(
 
 @Composable
 fun VerticalLevelMeter(
-    level: Float, // Valor entre 0.0f y 1.0f
+    level: TrackMeterLevel,
     modifier: Modifier = Modifier
 ) {
     val appColors = LocalAppThemeColors.current
-    Box(
-        modifier = modifier
-            .clip(RoundedCornerShape(3.dp))
-            .background(appColors.meterBackground),
-        contentAlignment = Alignment.BottomCenter
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .fillMaxHeight(fraction = level.coerceIn(0f, 1f))
-                .background(MaterialTheme.colorScheme.secondary)
+    val rmsAnimation = remember { Animatable(0f) }
+    val peakAnimation = remember { Animatable(0f) }
+
+    LaunchedEffect(level.rms) {
+        val target = level.rms.coerceIn(0f, 1f)
+        rmsAnimation.animateTo(
+            targetValue = target,
+            animationSpec = tween(
+                durationMillis = if (target > rmsAnimation.value) 45 else 240,
+                easing = LinearEasing
+            )
         )
+    }
+    LaunchedEffect(level.peak) {
+        peakAnimation.animateTo(
+            targetValue = level.peak.coerceIn(0f, 1f),
+            animationSpec = tween(durationMillis = 35, easing = LinearEasing)
+        )
+    }
+
+    Canvas(modifier = modifier.clip(RoundedCornerShape(3.dp))) {
+        drawRect(color = appColors.meterBackground)
+
+        // Keep the gradient anchored to the full meter, revealing it upward as
+        // the RMS level increases (green -> yellow -> red).
+        val gradient = Brush.verticalGradient(
+            colors = listOf(appColors.meterRed, appColors.meterYellow, appColors.meterGreen),
+            startY = 0f,
+            endY = size.height
+        )
+        val fillHeight = size.height * rmsAnimation.value
+        if (fillHeight > 0f) {
+            drawRect(
+                brush = gradient,
+                topLeft = Offset(0f, size.height - fillHeight),
+                size = Size(size.width, fillHeight)
+            )
+        }
+
+        if (peakAnimation.value > 0f) {
+            val peakY = size.height * (1f - peakAnimation.value)
+            drawLine(
+                color = appColors.mainText,
+                start = Offset(0f, peakY),
+                end = Offset(size.width, peakY),
+                strokeWidth = 1.dp.toPx()
+            )
+        }
     }
 }
 

@@ -17,6 +17,7 @@ data class PlaybackState(
     val mutedTrackIds: Set<String> = emptySet(),
     val soloTrackIds: Set<String> = emptySet(),
     val trackVolumes: Map<String, Float> = emptyMap(),
+    val trackMeterLevels: Map<String, TrackMeterLevel> = emptyMap(),
     val error: AudioError? = null
 ) {
     companion object {
