@@ -30,6 +30,7 @@ class PlaybackProjectJsonCodecTest {
             ),
             bpm = 124,
             isLoopEnabled = false,
+            isMetronomeEnabled = true,
             mutedTrackIds = setOf("track-2")
         )
 

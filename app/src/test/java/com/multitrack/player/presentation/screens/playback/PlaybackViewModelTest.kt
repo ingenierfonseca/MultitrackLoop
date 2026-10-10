@@ -86,6 +86,15 @@ class PlaybackViewModelTest {
     }
 
     @Test
+    fun `metronome tap toggles current engine setting`() {
+        state.value = state.value.copy(isMetronomeEnabled = false)
+
+        viewModel().onToggleMetronome()
+
+        verify { control.setMetronomeEnabled(true) }
+    }
+
+    @Test
     fun `bpm plus and minus delegate to control with current value`() {
         state.value = state.value.copy(currentBpm = 120)
         val vm = viewModel()

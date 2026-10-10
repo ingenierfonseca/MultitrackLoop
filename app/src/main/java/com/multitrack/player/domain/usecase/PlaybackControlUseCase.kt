@@ -20,6 +20,7 @@ class PlaybackControlUseCase(
     fun seekToStart() = engine.seekToStart()
     fun setLoop(enabled: Boolean) = engine.setLoop(enabled)
     fun setTrackMuted(trackId: String, muted: Boolean) = engine.setTrackMuted(trackId, muted)
+    fun setMetronomeEnabled(enabled: Boolean) = engine.setMetronomeEnabled(enabled)
 
     fun increaseBpm(current: Int): Int {
         val target = (current + 1).coerceAtMost(PlaybackState.MAX_BPM)

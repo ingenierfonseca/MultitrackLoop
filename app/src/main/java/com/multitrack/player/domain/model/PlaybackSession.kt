@@ -8,5 +8,6 @@ data class PlaybackSession(
     val tracks: List<AudioTrack>,
     val initialBpm: Int,
     val isLoopEnabled: Boolean = true,
+    val isMetronomeEnabled: Boolean = false,
     val mutedTrackIds: Set<String> = emptySet()
 )

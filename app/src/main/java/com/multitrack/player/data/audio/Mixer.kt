@@ -17,6 +17,9 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.concurrent.CopyOnWriteArrayList
+import kotlin.math.PI
+import kotlin.math.exp
+import kotlin.math.sin
 import kotlin.math.tanh
 
 /**
@@ -65,6 +68,9 @@ class Mixer(
     /** Loop flag. */
     @Volatile private var loop: Boolean = true
 
+    /** Synthesized click is mixed exclusively into the left output channel. */
+    @Volatile private var metronomeEnabled: Boolean = false
+
     fun configure(
         sources: List<PcmSource>,
         initialBpm: Int
@@ -84,6 +90,10 @@ class Mixer(
 
     fun setLoop(enabled: Boolean) {
         loop = enabled
+    }
+
+    fun setMetronomeEnabled(enabled: Boolean) {
+        metronomeEnabled = enabled
     }
 
     fun setGain(index: Int, gain: Float) {
@@ -172,6 +182,7 @@ class Mixer(
         val frameChunk = 1024 // ~23 ms @ 44.1 kHz; good trade-off latency / overhead
         val mixBuf = FloatArray(frameChunk * 2)
         val chunkBuf = FloatArray(frameChunk * 2)
+        var metronomeFramePosition = 0L
         var lastPublishNanos = System.nanoTime()
 
         try {
@@ -192,6 +203,22 @@ class Mixer(
                             mixBuf[i] += chunkBuf[i] * g
                             i++
                         }
+                    }
+                }
+
+                if (anyActive && metronomeEnabled) {
+                    val framesPerBeat =
+                        (PlaybackClock.OUTPUT_SAMPLE_RATE * 60L / currentBpm.coerceAtLeast(1))
+                            .coerceAtLeast(1L)
+                    val clickFrames = PlaybackClock.OUTPUT_SAMPLE_RATE / 30
+                    for (frame in 0 until frameChunk) {
+                        val frameInBeat = metronomeFramePosition % framesPerBeat
+                        if (frameInBeat < clickFrames) {
+                            val seconds = frameInBeat.toDouble() / PlaybackClock.OUTPUT_SAMPLE_RATE
+                            val click = sin(2.0 * PI * 1_800.0 * seconds) * exp(-seconds * 90.0)
+                            mixBuf[frame * 2] += (click * 0.45).toFloat()
+                        }
+                        metronomeFramePosition++
                     }
                 }
 
@@ -217,6 +244,7 @@ class Mixer(
                     if (loop) {
                         for (s in sources) s.seekToStart()
                         clock.reset()
+                        metronomeFramePosition = 0L
                     } else {
                         _isRunning.value = false
                         break

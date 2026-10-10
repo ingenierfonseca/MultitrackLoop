@@ -36,6 +36,9 @@ interface PlaybackEngine {
     /** Mutes or unmutes a single source without affecting the other tracks. */
     fun setTrackMuted(trackId: String, muted: Boolean)
 
+    /** Enables or disables the metronome click on the left output channel. */
+    fun setMetronomeEnabled(enabled: Boolean)
+
     /** Changes the playback speed (BPM). Clamped to engine limits. */
     fun setBpm(bpm: Int)
 

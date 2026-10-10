@@ -292,7 +292,9 @@ private fun ReadyView(
             isPlaying = state.isPlaying,
             isBusy = state.isLoading || projectState.isBusy,
             canSaveProject = projectState.canSave,
+            isMetronomeEnabled = state.isMetronomeEnabled,
             onAddTrack = onAddTrack,
+            onToggleMetronome = vm::onToggleMetronome,
             onSaveProjectAs = onSaveProjectAs,
             onSaveProject = onSaveProject,
             onLoadProject = onLoadProject
@@ -516,6 +518,7 @@ fun PlaybackScreenPreview() {
     val bpm = androidx.compose.runtime.remember { androidx.compose.runtime.mutableIntStateOf(120) }
     val isPlaying = androidx.compose.runtime.remember { mutableStateOf(false) }
     val isLoopEnabled = androidx.compose.runtime.remember { mutableStateOf(true) }
+    val isMetronomeEnabled = androidx.compose.runtime.remember { mutableStateOf(false) }
     val positionMs = androidx.compose.runtime.remember { androidx.compose.runtime.mutableLongStateOf(63_000L) }
     val durationMs = 185_000L
 
@@ -553,7 +556,9 @@ fun PlaybackScreenPreview() {
                     isPlaying = isPlaying.value,
                     isBusy = false,
                     canSaveProject = false,
+                    isMetronomeEnabled = isMetronomeEnabled.value,
                     onAddTrack = {},
+                    onToggleMetronome = { isMetronomeEnabled.value = !isMetronomeEnabled.value },
                     onSaveProjectAs = {},
                     onSaveProject = {},
                     onLoadProject = {}

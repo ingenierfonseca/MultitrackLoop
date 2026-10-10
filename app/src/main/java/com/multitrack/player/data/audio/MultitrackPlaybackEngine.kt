@@ -76,6 +76,7 @@ class MultitrackPlaybackEngine(
                 val durationMs = computeMixDurationMs(sources)
                 mixer.configure(sources, session.initialBpm)
                 mixer.setLoop(session.isLoopEnabled)
+                mixer.setMetronomeEnabled(session.isMetronomeEnabled)
                 session.tracks.forEachIndexed { index, track ->
                     if (track.id in session.mutedTrackIds) mixer.setGain(index, 0f)
                 }
@@ -89,6 +90,7 @@ class MultitrackPlaybackEngine(
                     isPlaying = false,
                     isPaused = false,
                     isLoopEnabled = session.isLoopEnabled,
+                    isMetronomeEnabled = session.isMetronomeEnabled,
                     isLoading = false,
                     mutedTrackIds = session.mutedTrackIds.intersect(session.tracks.map { it.id }.toSet()),
                     error = null
@@ -150,6 +152,11 @@ class MultitrackPlaybackEngine(
                 }
             )
         }
+    }
+
+    override fun setMetronomeEnabled(enabled: Boolean) {
+        mixer.setMetronomeEnabled(enabled)
+        _state.update { it.copy(isMetronomeEnabled = enabled) }
     }
 
     override fun setBpm(bpm: Int) {

@@ -8,6 +8,7 @@ data class PlaybackState(
     val isPlaying: Boolean = false,
     val isPaused: Boolean = false,
     val isLoopEnabled: Boolean = true,
+    val isMetronomeEnabled: Boolean = false,
     val currentBpm: Int = 120,
     val positionMs: Long = 0L,
     val durationMs: Long = 0L,

@@ -33,6 +33,7 @@
     <string name="cd_loops">Loops</string>
     <string name="cd_menu">Menú</string>
     <string name="cd_toggle_loop">Cambiar loop</string>
+    <string name="cd_toggle_metronome">Activar o desactivar metrónomo</string>
     <string name="cd_settings">Ajustes</string>
     <string name="loading">Cargando…</string>
     <string name="error_generic">Error</string>

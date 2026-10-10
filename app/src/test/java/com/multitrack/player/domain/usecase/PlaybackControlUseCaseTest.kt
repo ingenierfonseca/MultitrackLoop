@@ -60,6 +60,12 @@ class PlaybackControlUseCaseTest {
     }
 
     @Test
+    fun `metronome toggle forwards state to engine`() {
+        useCase.setMetronomeEnabled(true)
+        verify { engine.setMetronomeEnabled(true) }
+    }
+
+    @Test
     fun `play pause stop forward to engine`() {
         useCase.play()
         useCase.pause()
