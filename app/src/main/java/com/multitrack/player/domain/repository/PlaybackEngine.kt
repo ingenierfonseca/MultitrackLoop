@@ -59,6 +59,9 @@ interface PlaybackEngine {
     /** Changes the playback speed (BPM). Clamped to engine limits. */
     fun setBpm(bpm: Int)
 
+    /** Updates the source music tempo used as the playback-speed reference. */
+    fun setOriginalBpm(bpm: Int)
+
     /** Releases every native resource. Idempotent. */
     fun release()
 }

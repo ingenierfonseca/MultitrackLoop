@@ -70,7 +70,8 @@ fun AppHeader(
     onNewProject: () -> Unit,
     onSaveProjectAs: () -> Unit,
     onSaveProject: () -> Unit,
-    onLoadProject: () -> Unit
+    onLoadProject: () -> Unit,
+    onSetOriginalBpm: () -> Unit
 ) {
     val appColors = LocalAppThemeColors.current
     var menuExpanded by remember { mutableStateOf(false) }
@@ -271,6 +272,14 @@ fun AppHeader(
                     onClick = {
                         menuExpanded = false
                         onLoadProject()
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.project_set_original_bpm)) },
+                    enabled = !isPlaying && !isBusy,
+                    onClick = {
+                        menuExpanded = false
+                        onSetOriginalBpm()
                     }
                 )
             }

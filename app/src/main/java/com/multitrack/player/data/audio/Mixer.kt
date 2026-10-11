@@ -127,6 +127,10 @@ class Mixer(
         currentBpm = bpm.coerceIn(40, 300)
     }
 
+    fun setOriginalBpm(bpm: Int) {
+        originalBpm = bpm.coerceAtLeast(1)
+    }
+
     fun setLoop(enabled: Boolean) {
         loop = enabled
     }

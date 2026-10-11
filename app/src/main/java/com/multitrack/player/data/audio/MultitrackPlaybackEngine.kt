@@ -334,6 +334,26 @@ class MultitrackPlaybackEngine(
         }
     }
 
+    override fun setOriginalBpm(bpm: Int) {
+        val clamped = bpm.coerceIn(PlaybackState.MIN_BPM, PlaybackState.MAX_BPM)
+        mixer.setOriginalBpm(clamped)
+        _state.update { state ->
+            state.copy(
+                originalBpm = clamped,
+                durationMs = playbackDuration(
+                    clamped,
+                    state.currentBpm,
+                    state.isLoopEnabled,
+                    state.isLoopQuantized
+                ),
+                tracks = state.tracks.map { track ->
+                    val baseDuration = baseTrackDurationMs[track.id] ?: return@map track
+                    track.copy(durationMs = durationAtBpm(baseDuration, clamped, state.currentBpm))
+                }
+            )
+        }
+    }
+
     private fun onCountInCompleted() {
         resume = true
         _state.update { it.copy(isCountingIn = false) }

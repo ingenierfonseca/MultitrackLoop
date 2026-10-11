@@ -10,6 +10,7 @@ sealed interface PlaybackUiState {
     data class Ready(
         val tracks: List<AudioTrack>,
         val bpm: Int,
+        val originalBpm: Int = bpm,
         val isPlaying: Boolean,
         val isPaused: Boolean,
         val isCountingIn: Boolean = false,
@@ -35,6 +36,7 @@ internal fun PlaybackState.toUi(): PlaybackUiState = if (error != null && tracks
     PlaybackUiState.Ready(
         tracks = tracks,
         bpm = currentBpm,
+        originalBpm = originalBpm,
         isPlaying = isPlaying,
         isPaused = isPaused,
         isCountingIn = isCountingIn,

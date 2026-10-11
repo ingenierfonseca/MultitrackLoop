@@ -14,7 +14,7 @@ fun MultitrackNavHost() {
     val navController = rememberNavController()
     NavHost(
         navController = navController,
-        startDestination = NavRoutes.TRACK_SELECTION
+        startDestination = NavRoutes.PLAYBACK
     ) {
         composable(NavRoutes.TRACK_SELECTION) {
             TrackSelectionScreen(
@@ -26,11 +26,11 @@ fun MultitrackNavHost() {
         }
         composable(
             route = NavRoutes.PLAYBACK,
-            arguments = listOf(navArgument("session") { type = NavType.StringType })
+            //arguments = listOf(navArgument("session") { type = NavType.StringType })
         ) { backStackEntry ->
-            val raw = backStackEntry.arguments?.getString("session").orEmpty()
-            val session = SessionCodec.decode(raw)
-            PlaybackScreen(session = session)
+            //val raw = backStackEntry.arguments?.getString("session").orEmpty()
+            //val session = SessionCodec.decode(raw)
+            PlaybackScreen(/*session = session*/)
         }
     }
 }

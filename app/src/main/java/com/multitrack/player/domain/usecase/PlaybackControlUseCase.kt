@@ -29,6 +29,7 @@ class PlaybackControlUseCase(
     fun setMetronomeEnabled(enabled: Boolean) = engine.setMetronomeEnabled(enabled)
     fun setTrackVolume(trackId: String, volume: Float) = engine.setTrackVolume(trackId, volume)
     fun setTrackSolo(trackId: String, solo: Boolean) = engine.setTrackSolo(trackId, solo)
+    fun setOriginalBpm(bpm: Int) = engine.setOriginalBpm(bpm)
 
     fun increaseBpm(current: Int): Int {
         val target = (current + 1).coerceAtMost(PlaybackState.MAX_BPM)

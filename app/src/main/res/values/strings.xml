@@ -78,6 +78,8 @@
     <string name="loop_label">LOOP</string>
     <string name="project_save_as">Guardar proyecto</string>
     <string name="project_new">Nuevo proyecto</string>
+    <string name="project_set_original_bpm">Establecer BPM original</string>
+    <string name="project_set_original_bpm_title">BPM original de la música</string>
     <string name="project_save">Guardar</string>
     <string name="project_load">Cargar proyecto</string>
     <string name="project_name_title">Nombre del proyecto</string>

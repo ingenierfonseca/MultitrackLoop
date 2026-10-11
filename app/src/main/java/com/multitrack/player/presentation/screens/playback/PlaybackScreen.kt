@@ -87,18 +87,19 @@ import com.multitrack.player.presentation.settings.AppSettingsViewModel
 
 @Composable
 fun PlaybackScreen(
-    session: PlaybackSession,
+    //session: PlaybackSession,
     viewModel: PlaybackViewModel = hiltViewModel(),
     appSettingsViewModel: AppSettingsViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
+    val session = PlaybackSession(originalBpm = 120, initialBpm = 120)
     val activity = context as? ComponentActivity
     var showProjectNameDialog by remember { mutableStateOf(false) }
     var projectNameInput by remember { mutableStateOf("") }
     var showNewProjectWarning by remember { mutableStateOf(false) }
-    var showNewProjectTempo by remember { mutableStateOf(false) }
-    var newProjectBpmInput by remember { mutableStateOf("120") }
-    var newProjectBpmError by remember { mutableStateOf<String?>(null) }
+    var showOriginalBpmDialog by remember { mutableStateOf(false) }
+    var originalBpmInput by remember { mutableStateOf("120") }
+    var originalBpmError by remember { mutableStateOf<String?>(null) }
     var showLoopQuantizationWarning by remember { mutableStateOf(false) }
     var shortLoopTrackNames by remember { mutableStateOf(emptyList<String>()) }
 
@@ -216,6 +217,11 @@ fun PlaybackScreen(
                             )
                         },
                         onNewProject = { showNewProjectWarning = true },
+                        onSetOriginalBpm = {
+                            originalBpmInput = s.originalBpm.toString()
+                            originalBpmError = null
+                            showOriginalBpmDialog = true
+                        },
                         onToggleLoopQuantization = {
                             if (s.isLoopQuantized) {
                                 viewModel.onToggleLoopQuantized(false)
@@ -289,9 +295,7 @@ fun PlaybackScreen(
                 TextButton(
                     onClick = {
                         showNewProjectWarning = false
-                        newProjectBpmInput = "120"
-                        newProjectBpmError = null
-                        showNewProjectTempo = true
+                        viewModel.createNewProject()
                     }
                 ) {
                     Text(stringResource(R.string.project_new))
@@ -305,34 +309,34 @@ fun PlaybackScreen(
         )
     }
 
-    if (showNewProjectTempo) {
-        val parsedBpm = newProjectBpmInput.toIntOrNull()
-        val bpmError = newProjectBpmError ?: when {
+    if (showOriginalBpmDialog) {
+        val parsedBpm = originalBpmInput.toIntOrNull()
+        val bpmError = originalBpmError ?: when {
             parsedBpm == null -> "invalid"
             parsedBpm < com.multitrack.player.domain.model.PlaybackState.MIN_BPM -> "min"
             parsedBpm > com.multitrack.player.domain.model.PlaybackState.MAX_BPM -> "max"
             else -> null
         }
         ProjectTempoDialog(
-            bpmInput = newProjectBpmInput,
+            bpmInput = originalBpmInput,
             error = bpmError,
-            titleRes = R.string.new_project_tempo_title,
+            titleRes = R.string.project_set_original_bpm_title,
             continueEnabled = bpmError == null,
-            onDismiss = { showNewProjectTempo = false },
+            onDismiss = { showOriginalBpmDialog = false },
             onContinue = {
-                val bpm = newProjectBpmInput.toIntOrNull()
+                val bpm = originalBpmInput.toIntOrNull()
                 if (bpm != null && bpm in
                     com.multitrack.player.domain.model.PlaybackState.MIN_BPM..
                     com.multitrack.player.domain.model.PlaybackState.MAX_BPM
                 ) {
-                    showNewProjectTempo = false
-                    viewModel.createNewProject(bpm)
+                    showOriginalBpmDialog = false
+                    viewModel.onSetOriginalBpm(bpm)
                 }
             },
             onBpmChange = { text ->
-                newProjectBpmInput = text
+                originalBpmInput = text
                 val value = text.toIntOrNull()
-                newProjectBpmError = when {
+                originalBpmError = when {
                     text.isBlank() -> "invalid"
                     value == null -> "invalid"
                     value < com.multitrack.player.domain.model.PlaybackState.MIN_BPM -> "min"
@@ -472,6 +476,7 @@ private fun ReadyView(
     onSaveProject: () -> Unit,
     onLoadProject: () -> Unit,
     onNewProject: () -> Unit,
+    onSetOriginalBpm: () -> Unit,
     onToggleLoopQuantization: () -> Unit
 ) {
     val appColors = LocalAppThemeColors.current
@@ -502,7 +507,8 @@ private fun ReadyView(
             onSaveProjectAs = onSaveProjectAs,
             onSaveProject = onSaveProject,
             onLoadProject = onLoadProject,
-            onNewProject = onNewProject
+            onNewProject = onNewProject,
+            onSetOriginalBpm = onSetOriginalBpm
         )
         Row(
             horizontalArrangement = Arrangement.spacedBy(24.dp),
@@ -886,7 +892,8 @@ fun PlaybackScreenPreview() {
                     onSaveProjectAs = {},
                     onSaveProject = {},
                     onLoadProject = {},
-                    onNewProject = {}
+                    onNewProject = {},
+                    onSetOriginalBpm = {}
                 )
                 Row(
                     modifier = Modifier

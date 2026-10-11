@@ -92,7 +92,7 @@ class PlaybackViewModel @Inject constructor(
         }
     }
 
-    fun createNewProject(originalBpm: Int) {
+    fun createNewProject(originalBpm: Int = 120) {
         if (engine.state.value.isPlaying || engine.state.value.isLoading || _projectUiState.value.isBusy) return
         val bpm = originalBpm.coerceIn(PlaybackState.MIN_BPM, PlaybackState.MAX_BPM)
         viewModelScope.launch {
@@ -285,6 +285,11 @@ class PlaybackViewModel @Inject constructor(
     fun onDecreaseBpm() {
         if (engine.state.value.isLoading || engine.state.value.isCountingIn) return
         control.decreaseBpm(engine.state.value.currentBpm)
+    }
+
+    fun onSetOriginalBpm(bpm: Int) {
+        if (engine.state.value.isLoading || engine.state.value.isPlaying) return
+        control.setOriginalBpm(bpm)
     }
 
     override fun onCleared() {
