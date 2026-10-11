@@ -169,7 +169,9 @@ class MultitrackPlaybackEngine(
         if (!resume) {
             mixer.softResetForRestart()
         }
-        val countInForThisStart = if (!resume && countInEnabled) countInBeats else 0
+        val countInForThisStart = if (
+            !resume && countInEnabled && _state.value.isMetronomeEnabled
+        ) countInBeats else 0
         mixer.start(countInForThisStart)
         resume = countInForThisStart == 0
         _state.update {

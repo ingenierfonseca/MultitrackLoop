@@ -264,7 +264,12 @@ class Mixer(
                 var countInFramePosition = 0L
                 var nextPulse = 0
 
-                while (countInFramePosition < totalCountInFrames && isActive && _isRunning.value) {
+                while (
+                    countInFramePosition < totalCountInFrames &&
+                        isActive &&
+                        _isRunning.value &&
+                        metronomeEnabled
+                ) {
                     val framesToWrite = minOf(
                         frameChunk.toLong(),
                         totalCountInFrames - countInFramePosition
@@ -303,7 +308,9 @@ class Mixer(
                 }
 
                 _isCountingIn.value = false
-                if (_isRunning.value && countInFramePosition >= totalCountInFrames) {
+                if (_isRunning.value &&
+                    (countInFramePosition >= totalCountInFrames || !metronomeEnabled)
+                ) {
                     clock.reset()
                     metronomeBeatPhase = 0.0
                     metronomeClickAgeFrames = if (metronomeEnabled) 0 else -1

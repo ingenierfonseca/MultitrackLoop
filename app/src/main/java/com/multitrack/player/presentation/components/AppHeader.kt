@@ -127,8 +127,8 @@ fun AppHeader(
         HeaderIcon(
             icon = Icons.Default.Timer,
             contentDescriptionRes = R.string.cd_toggle_count_in,
-            tint = if (countInEnabled) appColors.accent else appColors.mutedText,
-            enabled = !isBusy,
+            tint = if (countInEnabled && isMetronomeEnabled) appColors.accent else appColors.mutedText,
+            enabled = !isBusy && isMetronomeEnabled,
             onClick = onToggleCountIn
         )
         HeaderIcon(
