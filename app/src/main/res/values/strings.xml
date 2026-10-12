@@ -48,6 +48,7 @@
     <string name="loading">Cargando…</string>
     <string name="error_generic">Error</string>
     <string name="playback_error_title">No se pudo reproducir el audio</string>
+    <string name="error_permission_not_persisted">Android no permitió conservar el acceso a este archivo. Vuelve a seleccionarlo desde el selector del sistema.</string>
     <string name="track_enabled">ON</string>
     <string name="track_muted">MUTE</string>
     <string name="track_mute_action">Silenciar %1$s</string>
@@ -94,9 +95,15 @@
     <string name="loading_track">Agregando pista…</string>
     <string name="saving_project">Guardando proyecto…</string>
     <string name="loading_project">Cargando proyecto…</string>
+    <string name="relinking_project">Volviendo a vincular pista…</string>
     <string name="creating_project">Creando proyecto…</string>
     <string name="loading_tracks">Cargando pistas…</string>
     <string name="project_operation_failed">No se pudo completar la operación del proyecto</string>
+    <string name="error_invalid_project_file">El archivo seleccionado no contiene un proyecto .mtl válido.</string>
+    <string name="project_relink_title">Volver a vincular archivos</string>
+    <string name="project_relink_message">El proyecto no tiene acceso a estos audios. Selecciona de nuevo cada archivo para restaurar el permiso.</string>
+    <string name="project_relink_action">Buscar</string>
+    <string name="project_relinked">Vinculado</string>
     <string name="unknown_audio_name">Audio</string>
     <string name="loop_quantization_warning_title">Pistas más cortas que 4 compases</string>
     <string name="loop_quantization_warning_message">Estas pistas terminarán antes de completar el ciclo y quedarán en silencio hasta la repetición:</string>

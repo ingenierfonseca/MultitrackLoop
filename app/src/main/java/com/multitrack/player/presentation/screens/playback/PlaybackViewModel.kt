@@ -3,10 +3,12 @@ package com.multitrack.player.presentation.screens.playback
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.multitrack.player.domain.model.AudioError
+import com.multitrack.player.domain.model.AudioTrack
 import com.multitrack.player.domain.model.AppSettings
 import com.multitrack.player.domain.model.PlaybackState
 import kotlinx.coroutines.CancellationException
 import com.multitrack.player.domain.model.PlaybackProject
+import com.multitrack.player.domain.model.PlaybackProjectError
 import com.multitrack.player.domain.model.PlaybackSession
 import com.multitrack.player.domain.repository.PlaybackEngine
 import com.multitrack.player.domain.usecase.PlaybackControlUseCase
@@ -57,11 +59,19 @@ class PlaybackViewModel @Inject constructor(
         addTracks(listOf(PickedAudioFile(uri, displayName, mime)))
     }
 
-    fun addTracks(files: List<PickedAudioFile>) {
-        if (files.isEmpty() || engine.state.value.isPlaying || engine.state.value.isLoading || _projectUiState.value.isBusy) return
+    fun addTracks(files: List<PickedAudioFile>, selectionErrorCode: String? = null) {
+        if (files.isEmpty()) {
+            selectionErrorCode?.let(::reportProjectError)
+            return
+        }
+        if (engine.state.value.isPlaying || engine.state.value.isLoading || _projectUiState.value.isBusy) return
         viewModelScope.launch {
             _projectUiState.update {
-                it.copy(isBusy = true, operation = ProjectOperation.ADDING_TRACK, error = null)
+                it.copy(
+                    isBusy = true,
+                    operation = ProjectOperation.ADDING_TRACK,
+                    error = selectionErrorCode
+                )
             }
             try {
                 val results = files.map { file ->
@@ -88,7 +98,7 @@ class PlaybackViewModel @Inject constructor(
                     it.copy(
                         isBusy = false,
                         operation = null,
-                        error = firstFailure?.let(::projectErrorCode)
+                        error = firstFailure?.let(::projectErrorCode) ?: selectionErrorCode
                     )
                 }
             } catch (error: Exception) {
@@ -191,34 +201,62 @@ class PlaybackViewModel @Inject constructor(
         }
     }
 
-    fun loadProject(sourceUri: String) {
+    fun loadProject(sourceUri: String, canOverwrite: Boolean = true) {
         if (engine.state.value.isPlaying || engine.state.value.isLoading || _projectUiState.value.isBusy) return
         viewModelScope.launch {
             _projectUiState.update {
-                it.copy(isBusy = true, operation = ProjectOperation.LOADING, error = null)
+                it.copy(
+                    isBusy = true,
+                    operation = ProjectOperation.LOADING,
+                    error = null,
+                    relinkRequest = null
+                )
             }
             try {
                 val project = loadPlaybackProject(sourceUri)
-                engine.prepare(
-                        PlaybackSession(
-                            tracks = project.tracks,
-                            initialBpm = project.bpm,
-                            originalBpm = project.originalBpm,
-                            isLoopEnabled = project.isLoopEnabled,
-                            isLoopQuantized = project.isLoopQuantized,
-                            isMetronomeEnabled = project.isMetronomeEnabled,
-                            mutedTrackIds = project.mutedTrackIds,
-                            soloTrackIds = project.soloTrackIds,
-                            trackVolumes = project.trackVolumes
+                val resolutions = project.tracks.map { track ->
+                    val mime = when (track.format) {
+                        com.multitrack.player.domain.model.AudioFormat.WAV -> "audio/wav"
+                        com.multitrack.player.domain.model.AudioFormat.MP3 -> "audio/mpeg"
+                    }
+                    track to resolvePickedTrack(track.uri, track.name, mime)
+                }
+                val resolutionFailures = resolutions.filter { (_, result) -> result.isFailure }
+                val unavailableTracks = resolutionFailures
+                    .filter { (_, result) -> result.exceptionOrNull().isRelinkableFailure() }
+                    .map { (track, _) -> track }
+                val nonRelinkableFailure = resolutionFailures
+                    .firstOrNull { (_, result) -> !result.exceptionOrNull().isRelinkableFailure() }
+                    ?.second?.exceptionOrNull()
+                if (nonRelinkableFailure != null) throw nonRelinkableFailure
+                if (unavailableTracks.isNotEmpty()) {
+                    _projectUiState.update {
+                        it.copy(
+                            isBusy = false,
+                            operation = null,
+                            error = null,
+                            relinkRequest = ProjectRelinkRequest(
+                                sourceUri = sourceUri,
+                                project = project,
+                                missingTracks = unavailableTracks,
+                                canOverwrite = canOverwrite
+                            )
                         )
-                    ).getOrThrow()
+                    }
+                    return@launch
+                }
+                val validatedTracks = resolutions.map { (original, result) ->
+                    result.getOrThrow().copy(id = original.id, name = original.name)
+                }
+                activateProject(project, validatedTracks)
                 _projectUiState.update {
                     it.copy(
-                        savedUri = sourceUri,
+                        savedUri = sourceUri.takeIf { canOverwrite },
                         projectName = project.name,
                         isBusy = false,
                         operation = null,
-                        error = null
+                        error = null,
+                        relinkRequest = null
                     )
                 }
             } catch (error: Exception) {
@@ -238,7 +276,80 @@ class PlaybackViewModel @Inject constructor(
         _projectUiState.update { it.copy(error = null) }
     }
 
+    fun cancelProjectRelink() {
+        _projectUiState.update { it.copy(relinkRequest = null, error = null) }
+    }
+
+    fun relinkProjectTrack(trackId: String, pickedFile: PickedAudioFile) {
+        val request = _projectUiState.value.relinkRequest ?: return
+        if (request.missingTracks.none { it.id == trackId }) return
+        viewModelScope.launch {
+            _projectUiState.update {
+                it.copy(isBusy = true, operation = ProjectOperation.RELINKING, error = null)
+            }
+            try {
+                val replacement = resolvePickedTrack(
+                    pickedFile.uri,
+                    pickedFile.displayName,
+                    pickedFile.mimeType
+                ).getOrThrow()
+                val updatedRequest = request.copy(
+                    replacements = request.replacements + (trackId to replacement)
+                )
+                val requiredIds = updatedRequest.missingTracks.map { it.id }.toSet()
+                if (updatedRequest.replacements.keys.containsAll(requiredIds)) {
+                    val tracks = updatedRequest.project.tracks.map { original ->
+                        (updatedRequest.replacements[original.id] ?: original).copy(
+                            id = original.id,
+                            name = original.name
+                        )
+                    }
+                    activateProject(updatedRequest.project, tracks)
+                    _projectUiState.value = PlaybackProjectUiState(
+                        savedUri = updatedRequest.sourceUri.takeIf { updatedRequest.canOverwrite },
+                        projectName = updatedRequest.project.name
+                    )
+                } else {
+                    _projectUiState.update {
+                        it.copy(
+                            isBusy = false,
+                            operation = null,
+                            error = null,
+                            relinkRequest = updatedRequest
+                        )
+                    }
+                }
+            } catch (error: Exception) {
+                if (error is CancellationException) throw error
+                _projectUiState.update {
+                    it.copy(
+                        isBusy = false,
+                        operation = null,
+                        error = projectErrorCode(error)
+                    )
+                }
+            }
+        }
+    }
+
+    private suspend fun activateProject(project: PlaybackProject, tracks: List<AudioTrack>) {
+        engine.prepare(
+            PlaybackSession(
+                tracks = tracks,
+                initialBpm = project.bpm,
+                originalBpm = project.originalBpm,
+                isLoopEnabled = project.isLoopEnabled,
+                isLoopQuantized = project.isLoopQuantized,
+                isMetronomeEnabled = project.isMetronomeEnabled,
+                mutedTrackIds = project.mutedTrackIds,
+                soloTrackIds = project.soloTrackIds,
+                trackVolumes = project.trackVolumes
+            )
+        ).getOrThrow()
+    }
+
     private fun projectErrorCode(error: Throwable): String = when (error) {
+        is PlaybackProjectError.InvalidFile -> "error_invalid_project_file"
         AudioError.UnsupportedFormat -> "error_unsupported_format"
         AudioError.FileNotFound -> "error_file_not_found"
         AudioError.PermissionDenied -> "error_permission_denied"
@@ -246,11 +357,25 @@ class PlaybackViewModel @Inject constructor(
         is AudioError.DecoderError -> "error_decoder_error"
         is AudioError.PlaybackError -> "error_playback_error"
         is AudioError.Unknown -> "project_operation_failed"
+        is SecurityException -> "error_permission_denied"
+        is java.io.FileNotFoundException -> "error_file_not_found"
         else -> if (error.message?.contains("formato no soportado", ignoreCase = true) == true) {
             "error_unsupported_format"
         } else {
             "project_operation_failed"
         }
+    }
+
+    private fun Throwable?.isRelinkableFailure(): Boolean = when (this) {
+        AudioError.PermissionDenied,
+        AudioError.FileNotFound,
+        is SecurityException,
+        is java.io.FileNotFoundException -> true
+        else -> false
+    }
+
+    fun reportProjectError(errorCode: String) {
+        _projectUiState.update { it.copy(error = errorCode) }
     }
 
     fun onPlayPause() {
@@ -331,16 +456,26 @@ data class PlaybackProjectUiState(
     val projectName: String? = null,
     val isBusy: Boolean = false,
     val operation: ProjectOperation? = null,
-    val error: String? = null
+    val error: String? = null,
+    val relinkRequest: ProjectRelinkRequest? = null
 ) {
     val canSave: Boolean get() = savedUri != null
 }
+
+data class ProjectRelinkRequest(
+    val sourceUri: String,
+    val project: PlaybackProject,
+    val missingTracks: List<AudioTrack>,
+    val canOverwrite: Boolean,
+    val replacements: Map<String, AudioTrack> = emptyMap()
+)
 
 enum class ProjectOperation {
     ADDING_TRACK,
     SAVING,
     LOADING,
-    CREATING_PROJECT
+    CREATING_PROJECT,
+    RELINKING
 }
 
 data class PickedAudioFile(

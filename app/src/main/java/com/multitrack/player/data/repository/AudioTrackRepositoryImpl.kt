@@ -2,6 +2,7 @@ package com.multitrack.player.data.repository
 
 import android.content.ContentResolver
 import android.net.Uri
+import com.multitrack.player.domain.model.AudioError
 import com.multitrack.player.data.datasource.ContentResolverDataSource
 import com.multitrack.player.domain.model.AudioTrack
 import com.multitrack.player.domain.repository.AudioTrackRepository
@@ -24,6 +25,12 @@ class AudioTrackRepositoryImpl(
             dataSource.openInputStream(parsed)?.use { /* no-op */ }
                 ?: error("Cannot open stream for $uri")
             dataSource.queryMetadata(parsed).getOrThrow()
+        }.recoverCatching { error ->
+            when (error) {
+                is SecurityException -> throw AudioError.PermissionDenied
+                is java.io.FileNotFoundException -> throw AudioError.FileNotFound
+                else -> throw error
+            }
         }
     }
 }

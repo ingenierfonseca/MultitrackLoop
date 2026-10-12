@@ -22,9 +22,11 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -70,7 +72,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.multitrack.player.R
 import com.multitrack.player.domain.model.AudioTrack
@@ -92,6 +94,7 @@ fun PlaybackScreen(
     appSettingsViewModel: AppSettingsViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
+    val unknownAudioName = stringResource(R.string.unknown_audio_name)
     val session = PlaybackSession(originalBpm = 120, initialBpm = 120)
     val activity = context as? ComponentActivity
     var showProjectNameDialog by remember { mutableStateOf(false) }
@@ -102,41 +105,83 @@ fun PlaybackScreen(
     var originalBpmError by remember { mutableStateOf<String?>(null) }
     var showLoopQuantizationWarning by remember { mutableStateOf(false) }
     var shortLoopTrackNames by remember { mutableStateOf(emptyList<String>()) }
+    var relinkTrackId by remember { mutableStateOf<String?>(null) }
 
     val audioPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenMultipleDocuments()
     ) { uris ->
-        val pickedFiles = uris.map { uri ->
-            persistUriPermission(context, uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        var permissionFailure = false
+        val pickedFiles = uris.mapNotNull { uri ->
+            if (!persistUriPermission(context, uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)) {
+                permissionFailure = true
+                return@mapNotNull null
+            }
             val name = queryDisplayName(context, uri)
                 ?: uri.lastPathSegment
-                ?: context.getString(R.string.unknown_audio_name)
+                ?: unknownAudioName
             PickedAudioFile(
                 uri = uri.toString(),
                 displayName = name,
                 mimeType = context.contentResolver.getType(uri)
             )
         }
-        viewModel.addTracks(pickedFiles)
+        viewModel.addTracks(
+            pickedFiles,
+            if (permissionFailure) "error_permission_not_persisted" else null
+        )
     }
     val createProjectDocument = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/json")
     ) { uri ->
         if (uri != null) {
-            persistUriPermission(
+            if (!persistUriPermission(
                 context,
                 uri,
                 Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-            )
-            viewModel.saveProjectAs(uri.toString(), projectNameInput)
+            )) {
+                viewModel.reportProjectError("error_permission_not_persisted")
+            } else {
+                viewModel.saveProjectAs(uri.toString(), projectNameInput)
+            }
         }
     }
     val projectPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
         if (uri != null) {
-            persistUriPermission(context, uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            viewModel.loadProject(uri.toString())
+            if (!persistUriPermission(context, uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)) {
+                viewModel.reportProjectError("error_permission_not_persisted")
+            } else {
+                val canOverwrite = persistUriPermission(
+                    context,
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                )
+                viewModel.loadProject(uri.toString(), canOverwrite)
+            }
+        }
+    }
+    val relinkPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        val trackId = relinkTrackId
+        relinkTrackId = null
+        if (uri != null && trackId != null) {
+            if (!persistUriPermission(context, uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)) {
+                viewModel.reportProjectError("error_permission_not_persisted")
+            } else {
+                val name = queryDisplayName(context, uri)
+                    ?: uri.lastPathSegment
+                    ?: unknownAudioName
+                viewModel.relinkProjectTrack(
+                    trackId,
+                    PickedAudioFile(
+                        uri = uri.toString(),
+                        displayName = name,
+                        mimeType = context.contentResolver.getType(uri)
+                    )
+                )
+            }
         }
     }
 
@@ -374,10 +419,82 @@ fun PlaybackScreen(
             }
         )
     }
+
+    projectState.relinkRequest?.let { request ->
+        AlertDialog(
+            onDismissRequest = viewModel::cancelProjectRelink,
+            title = { Text(stringResource(R.string.project_relink_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(stringResource(R.string.project_relink_message))
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 280.dp)
+                    ) {
+                        items(request.missingTracks, key = { it.id }) { track ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = track.name,
+                                    modifier = Modifier.weight(1f),
+                                    maxLines = 2
+                                )
+                                TextButton(
+                                    enabled = !projectState.isBusy && track.id !in request.replacements,
+                                    onClick = {
+                                        relinkTrackId = track.id
+                                        relinkPicker.launch(arrayOf("audio/*"))
+                                    }
+                                ) {
+                                    Text(
+                                        stringResource(
+                                            if (track.id in request.replacements) {
+                                                R.string.project_relinked
+                                            } else {
+                                                R.string.project_relink_action
+                                            }
+                                        )
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    projectState.error?.let { errorCode ->
+                        Text(
+                            text = projectOperationErrorMessage(errorCode),
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = viewModel::cancelProjectRelink) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            }
+        )
+    }
 }
 
-private fun persistUriPermission(context: Context, uri: Uri, flags: Int) {
-    runCatching { context.contentResolver.takePersistableUriPermission(uri, flags) }
+private fun persistUriPermission(context: Context, uri: Uri, flags: Int): Boolean {
+    val resolver = context.contentResolver
+    val requiredRead = flags and Intent.FLAG_GRANT_READ_URI_PERMISSION != 0
+    val requiredWrite = flags and Intent.FLAG_GRANT_WRITE_URI_PERMISSION != 0
+    fun alreadyPersisted(): Boolean = resolver.persistedUriPermissions.any { permission ->
+        permission.uri == uri &&
+            (!requiredRead || permission.isReadPermission) &&
+            (!requiredWrite || permission.isWritePermission)
+    }
+    if (alreadyPersisted()) return true
+    return runCatching {
+        resolver.takePersistableUriPermission(uri, flags)
+        alreadyPersisted()
+    }.getOrDefault(false)
 }
 
 private fun queryDisplayName(context: Context, uri: Uri): String? =
@@ -426,6 +543,7 @@ private fun ProjectOperationOverlay(operation: ProjectOperation?) {
             ProjectOperation.SAVING -> R.string.saving_project
             ProjectOperation.LOADING -> R.string.loading_project
             ProjectOperation.CREATING_PROJECT -> R.string.creating_project
+            ProjectOperation.RELINKING -> R.string.relinking_project
             null -> R.string.loading
         }
     )
@@ -592,6 +710,8 @@ private fun ReadyView(
 
 @Composable
 private fun projectOperationErrorMessage(errorCode: String): String = when (errorCode) {
+    "error_permission_not_persisted" -> stringResource(R.string.error_permission_not_persisted)
+    "error_invalid_project_file" -> stringResource(R.string.error_invalid_project_file)
     "error_unsupported_format" -> stringResource(R.string.error_unsupported_format)
     "error_file_not_found" -> stringResource(R.string.error_file_not_found)
     "error_permission_denied" -> stringResource(R.string.error_permission_denied)

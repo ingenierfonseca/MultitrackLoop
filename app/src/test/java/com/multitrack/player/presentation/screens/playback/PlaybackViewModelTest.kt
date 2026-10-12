@@ -5,6 +5,10 @@ import com.multitrack.player.domain.model.AppSettings
 import com.multitrack.player.domain.model.MetronomeSubdivision
 import com.multitrack.player.domain.model.PlaybackSession
 import com.multitrack.player.domain.model.PlaybackState
+import com.multitrack.player.domain.model.AudioTrack
+import com.multitrack.player.domain.model.AudioFormat
+import com.multitrack.player.domain.model.PlaybackProject
+import com.multitrack.player.domain.model.PlaybackProjectError
 import com.multitrack.player.domain.repository.PlaybackEngine
 import com.multitrack.player.domain.usecase.PlaybackControlUseCase
 import com.multitrack.player.domain.usecase.LoadPlaybackProjectUseCase
@@ -24,6 +28,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
@@ -189,6 +194,87 @@ class PlaybackViewModelTest {
             })
         }
     }
+
+    @Test
+    fun `loading a project requests relinking for audio without access`() = runTest {
+        val track = AudioTrack(
+            id = "drums",
+            name = "Drums.wav",
+            uri = "content://old/drums",
+            durationMs = 1_000L,
+            format = AudioFormat.WAV
+        )
+        val project = playbackProject(track)
+        coEvery { loadProject("content://projects/song.mtl") } returns project
+        coEvery { resolveTrack(track.uri, track.name, "audio/wav") } returns
+            Result.failure(SecurityException("permission revoked"))
+
+        val vm = viewModel()
+        vm.loadProject("content://projects/song.mtl")
+
+        assertFalse(vm.projectUiState.value.isBusy)
+        assertEquals(listOf(track), vm.projectUiState.value.relinkRequest?.missingTracks)
+        coVerify(exactly = 0) { engine.prepare(any()) }
+    }
+
+    @Test
+    fun `relinking the missing project audio prepares it with the original track id`() = runTest {
+        val track = AudioTrack(
+            id = "drums",
+            name = "Drums.wav",
+            uri = "content://old/drums",
+            durationMs = 1_000L,
+            format = AudioFormat.WAV
+        )
+        val project = playbackProject(track)
+        val replacement = AudioTrack(
+            id = "generated-id",
+            name = "picked-drums.wav",
+            uri = "content://new/drums",
+            durationMs = 1_200L,
+            format = AudioFormat.WAV
+        )
+        coEvery { loadProject("content://projects/song.mtl") } returns project
+        coEvery { resolveTrack(track.uri, track.name, "audio/wav") } returns
+            Result.failure(SecurityException("permission revoked"))
+        coEvery { resolveTrack(replacement.uri, replacement.name, "audio/wav") } returns
+            Result.success(replacement)
+        coEvery { engine.prepare(any()) } returns Result.success(Unit)
+
+        val vm = viewModel()
+        vm.loadProject("content://projects/song.mtl")
+        vm.relinkProjectTrack(
+            track.id,
+            PickedAudioFile(replacement.uri, replacement.name, "audio/wav")
+        )
+
+        coVerify {
+            engine.prepare(match { session ->
+                session.tracks.single().id == track.id &&
+                    session.tracks.single().uri == replacement.uri
+            })
+        }
+        assertNull(vm.projectUiState.value.relinkRequest)
+        assertEquals("content://projects/song.mtl", vm.projectUiState.value.savedUri)
+    }
+
+    @Test
+    fun `invalid project content gets a specific user-facing error code`() = runTest {
+        coEvery { loadProject("content://projects/not-a-project") } throws
+            PlaybackProjectError.InvalidFile(IllegalArgumentException("bad JSON"))
+
+        val vm = viewModel()
+        vm.loadProject("content://projects/not-a-project")
+
+        assertEquals("error_invalid_project_file", vm.projectUiState.value.error)
+    }
+
+    private fun playbackProject(track: AudioTrack) = PlaybackProject(
+        name = "Song",
+        tracks = listOf(track),
+        bpm = 120,
+        isLoopEnabled = false
+    )
 
     @Test
     fun `onCleared releases engine`() {
