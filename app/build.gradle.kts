@@ -22,7 +22,7 @@ kotlin {
 
 android {
     namespace = "com.multitrack.player"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.multitrack.player"
