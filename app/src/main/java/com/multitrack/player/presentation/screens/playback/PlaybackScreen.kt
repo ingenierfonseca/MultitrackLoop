@@ -176,7 +176,7 @@ fun PlaybackScreen(
         ) {
             when (val s = state) {
                 PlaybackUiState.Loading -> LoadingView()
-                is PlaybackUiState.Error -> ErrorView(s)
+                is PlaybackUiState.Error -> ErrorView(s, viewModel::clearPlaybackError)
                 is PlaybackUiState.Ready -> Box(Modifier.fillMaxSize()) {
                     ReadyView(
                         state = s,
@@ -448,16 +448,23 @@ private fun ProjectOperationOverlay(operation: ProjectOperation?) {
 }
 
 @Composable
-private fun ErrorView(state: PlaybackUiState.Error) {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text(
-            text = state.audioError.toUserMessage(),
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.error,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(24.dp)
-        )
-    }
+private fun ErrorView(state: PlaybackUiState.Error, onAccept: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onAccept,
+        title = { Text(stringResource(R.string.playback_error_title)) },
+        text = {
+            Text(
+                text = state.audioError.toUserMessage(),
+                color = MaterialTheme.colorScheme.error,
+                textAlign = TextAlign.Center
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = onAccept) {
+                Text(stringResource(R.string.action_accept))
+            }
+        }
+    )
 }
 
 @Composable
@@ -574,17 +581,24 @@ private fun ReadyView(
         }
         if (projectState.error != null) {
             Text(
-                text = if (projectState.error == "project_operation_failed") {
-                    stringResource(R.string.project_operation_failed)
-                } else {
-                    projectState.error
-                },
+                text = projectOperationErrorMessage(projectState.error),
                 color = MaterialTheme.colorScheme.error,
                 style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier.fillMaxWidth()
             )
         }
     }
+}
+
+@Composable
+private fun projectOperationErrorMessage(errorCode: String): String = when (errorCode) {
+    "error_unsupported_format" -> stringResource(R.string.error_unsupported_format)
+    "error_file_not_found" -> stringResource(R.string.error_file_not_found)
+    "error_permission_denied" -> stringResource(R.string.error_permission_denied)
+    "error_invalid_audio" -> stringResource(R.string.error_invalid_audio)
+    "error_decoder_error" -> stringResource(R.string.error_decoder_error)
+    "error_playback_error" -> stringResource(R.string.error_playback_error)
+    else -> stringResource(R.string.project_operation_failed)
 }
 
 @Composable

@@ -164,6 +164,30 @@ class MultitrackPlaybackEngine(
         }
     }
 
+    override fun clearError() {
+        mixer.release()
+        preparedTracks = emptyList()
+        baseDurationMs = 0L
+        baseTrackDurationMs = emptyMap()
+        resume = false
+        _state.update { state ->
+            state.copy(
+                tracks = emptyList(),
+                positionMs = 0L,
+                durationMs = 0L,
+                isPlaying = false,
+                isPaused = false,
+                isCountingIn = false,
+                isLoading = false,
+                mutedTrackIds = emptySet(),
+                soloTrackIds = emptySet(),
+                trackVolumes = emptyMap(),
+                trackMeterLevels = emptyMap(),
+                error = null
+            )
+        }
+    }
+
     override fun play() {
         if (preparedTracks.isEmpty()) return
         if (!resume) {

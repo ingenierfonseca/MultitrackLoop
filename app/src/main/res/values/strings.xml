@@ -47,6 +47,7 @@
     <string name="cd_settings">Ajustes</string>
     <string name="loading">Cargando…</string>
     <string name="error_generic">Error</string>
+    <string name="playback_error_title">No se pudo reproducir el audio</string>
     <string name="track_enabled">ON</string>
     <string name="track_muted">MUTE</string>
     <string name="track_mute_action">Silenciar %1$s</string>

@@ -19,6 +19,9 @@ interface PlaybackEngine {
     /** Loads all tracks of [session] and pre-decodes them into PCM. */
     suspend fun prepare(session: PlaybackSession): Result<Unit>
 
+    /** Clears a dismissed playback error and returns to an empty editable session. */
+    fun clearError()
+
     /** Starts (or resumes) playback from the current position. */
     fun play()
 

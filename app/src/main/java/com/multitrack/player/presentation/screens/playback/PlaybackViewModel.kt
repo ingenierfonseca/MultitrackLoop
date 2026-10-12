@@ -2,6 +2,7 @@ package com.multitrack.player.presentation.screens.playback
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.multitrack.player.domain.model.AudioError
 import com.multitrack.player.domain.model.AppSettings
 import com.multitrack.player.domain.model.PlaybackState
 import kotlinx.coroutines.CancellationException
@@ -47,6 +48,11 @@ class PlaybackViewModel @Inject constructor(
         engine.prepare(session)
     }
 
+    fun clearPlaybackError() {
+        engine.clearError()
+        _projectUiState.value = PlaybackProjectUiState()
+    }
+
     fun addTrack(uri: String, displayName: String, mime: String?) {
         addTracks(listOf(PickedAudioFile(uri, displayName, mime)))
     }
@@ -58,10 +64,12 @@ class PlaybackViewModel @Inject constructor(
                 it.copy(isBusy = true, operation = ProjectOperation.ADDING_TRACK, error = null)
             }
             try {
-                val resolvedTracks = files.mapNotNull { file ->
-                    resolvePickedTrack(file.uri, file.displayName, file.mimeType).getOrNull()
+                val results = files.map { file ->
+                    resolvePickedTrack(file.uri, file.displayName, file.mimeType)
                 }
-                require(resolvedTracks.isNotEmpty()) { "No supported audio tracks were selected" }
+                val resolvedTracks = results.mapNotNull { it.getOrNull() }
+                val firstFailure = results.firstNotNullOfOrNull { it.exceptionOrNull() }
+                if (resolvedTracks.isEmpty()) throw firstFailure ?: AudioError.UnsupportedFormat
                 val current = engine.state.value
                 engine.prepare(
                     PlaybackSession(
@@ -77,7 +85,11 @@ class PlaybackViewModel @Inject constructor(
                     )
                 ).getOrThrow()
                 _projectUiState.update {
-                    it.copy(isBusy = false, operation = null, error = null)
+                    it.copy(
+                        isBusy = false,
+                        operation = null,
+                        error = firstFailure?.let(::projectErrorCode)
+                    )
                 }
             } catch (error: Exception) {
                 if (error is CancellationException) throw error
@@ -85,7 +97,7 @@ class PlaybackViewModel @Inject constructor(
                     it.copy(
                         isBusy = false,
                         operation = null,
-                        error = "project_operation_failed"
+                        error = projectErrorCode(error)
                     )
                 }
             }
@@ -172,7 +184,7 @@ class PlaybackViewModel @Inject constructor(
                     it.copy(
                         isBusy = false,
                         operation = null,
-                        error = "project_operation_failed"
+                        error = projectErrorCode(error)
                     )
                 }
             }
@@ -215,7 +227,7 @@ class PlaybackViewModel @Inject constructor(
                     it.copy(
                         isBusy = false,
                         operation = null,
-                        error = "project_operation_failed"
+                        error = projectErrorCode(error)
                     )
                 }
             }
@@ -224,6 +236,21 @@ class PlaybackViewModel @Inject constructor(
 
     fun clearProjectError() {
         _projectUiState.update { it.copy(error = null) }
+    }
+
+    private fun projectErrorCode(error: Throwable): String = when (error) {
+        AudioError.UnsupportedFormat -> "error_unsupported_format"
+        AudioError.FileNotFound -> "error_file_not_found"
+        AudioError.PermissionDenied -> "error_permission_denied"
+        is AudioError.InvalidAudio -> "error_invalid_audio"
+        is AudioError.DecoderError -> "error_decoder_error"
+        is AudioError.PlaybackError -> "error_playback_error"
+        is AudioError.Unknown -> "project_operation_failed"
+        else -> if (error.message?.contains("formato no soportado", ignoreCase = true) == true) {
+            "error_unsupported_format"
+        } else {
+            "project_operation_failed"
+        }
     }
 
     fun onPlayPause() {
@@ -290,6 +317,7 @@ class PlaybackViewModel @Inject constructor(
     fun onSetOriginalBpm(bpm: Int) {
         if (engine.state.value.isLoading || engine.state.value.isPlaying) return
         control.setOriginalBpm(bpm)
+        control.setBpm(bpm)
     }
 
     override fun onCleared() {

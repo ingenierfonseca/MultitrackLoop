@@ -1,116 +1,179 @@
 package com.multitrack.player.data.audio.source
 
 import com.multitrack.player.domain.model.AudioError
-import java.io.ByteArrayInputStream
 import java.io.InputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
-/**
- * WAV PCM factory. Decodes a WAV file fully into a [StereoFloatSource].
- *
- * Resampling to the bus rate happens lazily inside [StereoFloatSource.read],
- * so BPM changes apply correctly and synchronously across all sources.
- */
+/** Decodes common PCM and IEEE-float WAV files into the engine's stereo float source. */
 object WavPcmSource {
 
+    private const val PCM_FORMAT = 1
+    private const val IEEE_FLOAT_FORMAT = 3
+    private const val EXTENSIBLE_FORMAT = 0xFFFE
+
     fun fromStream(input: InputStream): Result<StereoFloatSource> = runCatching {
-        val allBytes = input.readBytes()
-        val bis = ByteArrayInputStream(allBytes)
+        val bytes = input.use { it.readBytes() }
+        if (bytes.size < 12) throw AudioError.InvalidAudio("Cabecera WAV incompleta")
 
-        val header = ByteArray(44)
-        readFully(bis, header, 0, 44)
-
-        val riff = String(header, 0, 4, Charsets.US_ASCII)
-        val wave = String(header, 8, 4, Charsets.US_ASCII)
-        require(riff == "RIFF" && wave == "WAVE") {
-            throw AudioError.InvalidAudio("No es un archivo WAV válido")
+        val buffer = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
+        val riff = String(bytes, 0, 4, Charsets.US_ASCII)
+        val wave = String(bytes, 8, 4, Charsets.US_ASCII)
+        if (riff != "RIFF" || wave != "WAVE") {
+            throw AudioError.InvalidAudio("No es un archivo WAV RIFF válido")
         }
 
-        var pos = 12
-        var sampleRate = 0
-        var channels = 0
-        var bitsPerSample = 0
-        var audioFormat = 0
+        var formatOffset = -1
+        var formatSize = 0L
         var dataOffset = -1
-        var dataSize = 0
+        var dataSize = 0L
+        var chunkOffset = 12L
 
-        while (pos < allBytes.size) {
-            if (allBytes.size - pos < 8) break
-            val chunkId = ByteArray(4)
-            val chunkSize = ByteArray(4)
-            System.arraycopy(allBytes, pos, chunkId, 0, 4)
-            System.arraycopy(allBytes, pos + 4, chunkSize, 0, 4)
-            val size = ByteBuffer.wrap(chunkSize).order(ByteOrder.LITTLE_ENDIAN).int
-            val id = String(chunkId, 0, 4, Charsets.US_ASCII)
+        while (chunkOffset + 8L <= bytes.size) {
+            val offset = chunkOffset.toInt()
+            val chunkId = String(bytes, offset, 4, Charsets.US_ASCII)
+            val chunkSize = uint32(buffer, offset + 4)
+            val chunkDataOffset = chunkOffset + 8L
+            val chunkEnd = chunkDataOffset + chunkSize
+            if (chunkEnd > bytes.size) throw AudioError.InvalidAudio("Chunk WAV truncado")
 
-            when (id) {
+            when (chunkId) {
                 "fmt " -> {
-                    val fmt = ByteArray(size)
-                    System.arraycopy(allBytes, pos + 8, fmt, 0, size)
-                    val bb = ByteBuffer.wrap(fmt).order(ByteOrder.LITTLE_ENDIAN)
-                    audioFormat = bb.short.toInt() and 0xFFFF
-                    channels = bb.short.toInt() and 0xFFFF
-                    sampleRate = bb.int
-                    bb.int // byte rate
-                    bb.short // block align
-                    bitsPerSample = bb.short.toInt() and 0xFFFF
+                    formatOffset = chunkDataOffset.toInt()
+                    formatSize = chunkSize
                 }
-                "data" -> {
-                    dataOffset = pos + 8
-                    dataSize = size
+                "data" -> if (dataOffset < 0) {
+                    dataOffset = chunkDataOffset.toInt()
+                    dataSize = chunkSize
                 }
-                else -> { /* skip */ }
             }
-            pos += 8 + size
-            if (size % 2 == 1) pos += 1
-            if (id == "data") break
+
+            chunkOffset = chunkEnd + (chunkSize and 1L)
         }
 
+        if (formatOffset < 0 || formatSize < 16L) {
+            throw AudioError.InvalidAudio("Chunk 'fmt ' ausente o incompleto")
+        }
         if (dataOffset < 0) throw AudioError.InvalidAudio("Chunk 'data' ausente")
-        if (audioFormat != 1) throw AudioError.UnsupportedFormat
-        if (bitsPerSample != 16) throw AudioError.UnsupportedFormat
+
+        var encoding = uint16(buffer, formatOffset)
+        val channels = uint16(buffer, formatOffset + 2)
+        val sampleRateLong = uint32(buffer, formatOffset + 4)
+        val blockAlign = uint16(buffer, formatOffset + 12)
+        val bitsPerSample = uint16(buffer, formatOffset + 14)
+        var validBitsPerSample = bitsPerSample
+
+        if (encoding == EXTENSIBLE_FORMAT) {
+            if (formatSize < 40L) throw AudioError.InvalidAudio("WAV extensible incompleto")
+            validBitsPerSample = uint16(buffer, formatOffset + 18)
+            // WAVE_FORMAT_EXTENSIBLE stores PCM (1) or IEEE float (3) in the
+            // first DWORD of the sub-format GUID at offset 24.
+            encoding = buffer.getInt(formatOffset + 24) and 0xFFFF
+        }
+
+        if (sampleRateLong !in 8_000L..384_000L) {
+            throw AudioError.InvalidAudio("Frecuencia de muestreo WAV inválida")
+        }
         if (channels !in 1..2) throw AudioError.UnsupportedFormat
-        if (dataOffset + dataSize > allBytes.size) throw AudioError.InvalidAudio("Truncated")
+        if (validBitsPerSample !in 1..bitsPerSample) throw AudioError.UnsupportedFormat
 
-        val totalFrames = dataSize / (channels * (bitsPerSample / 8))
+        val supportedBitDepth = when (encoding) {
+            PCM_FORMAT -> bitsPerSample in setOf(8, 16, 24, 32)
+            IEEE_FLOAT_FORMAT -> validBitsPerSample == bitsPerSample &&
+                (bitsPerSample == 32 || bitsPerSample == 64)
+            else -> false
+        }
+        if (!supportedBitDepth) throw AudioError.UnsupportedFormat
 
-        // Convert PCM16 -> float stereo (mono duplicated).
-        val stereo = FloatArray(totalFrames * 2)
-        val bb = ByteBuffer.wrap(allBytes, dataOffset, dataSize).order(ByteOrder.LITTLE_ENDIAN)
-        if (channels == 2) {
-            var i = 0
-            while (i < totalFrames) {
-                val l = bb.short.toInt()
-                val r = bb.short.toInt()
-                stereo[i * 2] = l.toFloat() / 32768f
-                stereo[i * 2 + 1] = r.toFloat() / 32768f
-                i++
+        val bytesPerSample = bitsPerSample / 8
+        if (blockAlign < channels * bytesPerSample || blockAlign == 0) {
+            throw AudioError.InvalidAudio("Alineación de bloques WAV inválida")
+        }
+        if (dataSize % blockAlign != 0L) throw AudioError.InvalidAudio("Datos WAV incompletos")
+
+        val frameCountLong = dataSize / blockAlign
+        if (frameCountLong <= 0L || frameCountLong > Int.MAX_VALUE / 2) {
+            throw AudioError.InvalidAudio("El WAV no contiene audio reproducible")
+        }
+        val frameCount = frameCountLong.toInt()
+        val stereo = FloatArray(Math.multiplyExact(frameCount, 2))
+
+        for (frame in 0 until frameCount) {
+            val frameOffset = dataOffset + frame * blockAlign
+            val left = readSample(buffer, frameOffset, encoding, bitsPerSample, validBitsPerSample)
+            val right = if (channels == 1) {
+                left
+            } else {
+                readSample(
+                    buffer,
+                    frameOffset + bytesPerSample,
+                    encoding,
+                    bitsPerSample,
+                    validBitsPerSample
+                )
             }
-        } else {
-            var i = 0
-            while (i < totalFrames) {
-                val m = bb.short.toInt().toFloat() / 32768f
-                stereo[i * 2] = m
-                stereo[i * 2 + 1] = m
-                i++
-            }
+            stereo[frame * 2] = left
+            stereo[frame * 2 + 1] = right
         }
 
         StereoFloatSource(
-            sourceSampleRate = sampleRate,
-            sourceChannels = 2, // already converted
+            sourceSampleRate = sampleRateLong.toInt(),
+            sourceChannels = 2,
             interleaved = stereo,
-            totalSourceFrames = totalFrames.toLong()
+            totalSourceFrames = frameCountLong
         )
     }
 
-    private fun readFully(stream: InputStream, buf: ByteArray, offset: Int, len: Int) {
-        var read = 0
-        while (read < len) {
-            val n = stream.read(buf, offset + read, len - read)
-            if (n < 0) error("EOF inesperado en WAV")
-            read += n
+    private fun readSample(
+        buffer: ByteBuffer,
+        offset: Int,
+        encoding: Int,
+        bitsPerSample: Int,
+        validBitsPerSample: Int
+    ): Float =
+        when (encoding) {
+            PCM_FORMAT -> when (bitsPerSample) {
+                8 -> normalizePcm(
+                    ((buffer.get(offset).toInt() and 0xFF) - 128) shr
+                        (bitsPerSample - validBitsPerSample),
+                    validBitsPerSample
+                )
+                16 -> normalizePcm(
+                    buffer.getShort(offset).toInt() shr (bitsPerSample - validBitsPerSample),
+                    validBitsPerSample
+                )
+                24 -> {
+                    var value = (buffer.get(offset).toInt() and 0xFF) or
+                        ((buffer.get(offset + 1).toInt() and 0xFF) shl 8) or
+                        ((buffer.get(offset + 2).toInt() and 0xFF) shl 16)
+                    if ((value and 0x800000) != 0) value = value or -0x1000000
+                    normalizePcm(value shr (bitsPerSample - validBitsPerSample), validBitsPerSample)
+                }
+                32 -> normalizePcm(
+                    buffer.getInt(offset) shr (bitsPerSample - validBitsPerSample),
+                    validBitsPerSample
+                )
+                else -> throw AudioError.UnsupportedFormat
+            }
+            IEEE_FLOAT_FORMAT -> when (bitsPerSample) {
+                32 -> buffer.getFloat(offset).toFiniteAudioSample()
+                64 -> buffer.getDouble(offset).toFloat().toFiniteAudioSample()
+                else -> throw AudioError.UnsupportedFormat
+            }
+            else -> throw AudioError.UnsupportedFormat
         }
+
+    private fun normalizePcm(sample: Int, validBitsPerSample: Int): Float {
+        val denominator = (1L shl (validBitsPerSample - 1)).toDouble()
+        return (sample.toDouble() / denominator).toFloat().coerceIn(-1f, 1f)
     }
+
+    private fun Float.toFiniteAudioSample(): Float =
+        if (isFinite()) coerceIn(-1f, 1f) else 0f
+
+    private fun uint16(buffer: ByteBuffer, offset: Int): Int =
+        buffer.getShort(offset).toInt() and 0xFFFF
+
+    private fun uint32(buffer: ByteBuffer, offset: Int): Long =
+        buffer.getInt(offset).toLong() and 0xFFFF_FFFFL
 }

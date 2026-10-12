@@ -3,6 +3,7 @@ package com.multitrack.player.presentation.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -69,23 +70,45 @@ fun ProjectTempoDialog(
                 onBpmChange = onBpmChange
             )
 
-            Button(
-                onClick = onContinue,
-                enabled = continueEnabled,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp)
-                    .semantics { testTag = "continue-button" },
-                shape = RoundedCornerShape(16.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary
-                )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Text(
-                    stringResource(R.string.continue_action),
-                    style = MaterialTheme.typography.titleMedium
-                )
+                Button(
+                    onClick = onDismiss,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(56.dp)
+                        .semantics { testTag = "continue-button" },
+                    shape = RoundedCornerShape(16.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        contentColor = MaterialTheme.colorScheme.surfaceVariant
+                    )
+                ) {
+                    Text(
+                        stringResource(R.string.action_cancel),
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                }
+
+                Button(
+                    onClick = onContinue,
+                    enabled = continueEnabled,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(56.dp)
+                        .semantics { testTag = "continue-button" },
+                    shape = RoundedCornerShape(16.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
+                    )
+                ) {
+                    Text(
+                        stringResource(R.string.continue_action),
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                }
             }
         }
     }

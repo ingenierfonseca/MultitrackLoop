@@ -1,5 +1,6 @@
 package com.multitrack.player.domain.usecase
 
+import com.multitrack.player.domain.model.AudioError
 import com.multitrack.player.domain.model.AudioFormat
 import com.multitrack.player.domain.model.AudioTrack
 import com.multitrack.player.domain.repository.AudioTrackRepository
@@ -18,7 +19,7 @@ class ResolvePickedTrackUseCase(
         mime: String?
     ): Result<AudioTrack> {
         val format = detectFormat(displayName, mime)
-            ?: return Result.failure(IllegalArgumentException("Formato no soportado"))
+            ?: return Result.failure(AudioError.UnsupportedFormat)
         return repository.resolveTrack(uri, displayName, mime)
             .map { it.copy(format = format) }
     }
@@ -27,7 +28,14 @@ class ResolvePickedTrackUseCase(
         val lower = name.lowercase()
         val m = mime?.lowercase()
         return when {
-            lower.endsWith(".wav") || m == "audio/wav" || m == "audio/x-wav" || m == "audio/wave" -> AudioFormat.WAV
+            lower.endsWith(".wav") || lower.endsWith(".wave") ||
+                m in setOf(
+                    "audio/wav",
+                    "audio/x-wav",
+                    "audio/wave",
+                    "audio/vnd.wave",
+                    "audio/x-pn-wav"
+                ) -> AudioFormat.WAV
             lower.endsWith(".mp3") || m == "audio/mpeg" || m == "audio/mp3" -> AudioFormat.MP3
             else -> null
         }
